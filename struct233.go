@@ -8,9 +8,10 @@
 //	c := struct233.NewConcurrentSkipList[string, int]()
 //
 // The types below are aliases of the implementations in the subpackages
-// (set, skiplist, pqueue, deque, bitset, lru, linkedmap, ringbuffer,
-// concurrent), so the facade adds no indirection: values returned by the
-// factories are the concrete types and all of their methods stay available.
+// (set, skiplist, pqueue, deque, bitset, lru, ttlcache, linkedmap, ringbuffer,
+// unionfind, bloomfilter, concurrent), so the facade adds no indirection:
+// values returned by the factories are the concrete types and all of their
+// methods stay available.
 //
 // The plain containers are not safe for concurrent use (like java.util);
 // use the Concurrent* types for cross-goroutine sharing.
@@ -18,8 +19,10 @@ package struct233
 
 import (
 	"cmp"
+	"time"
 
 	"github.com/neko233-com/struct233-go/bitset"
+	"github.com/neko233-com/struct233-go/bloomfilter"
 	"github.com/neko233-com/struct233-go/concurrent"
 	"github.com/neko233-com/struct233-go/deque"
 	"github.com/neko233-com/struct233-go/linkedmap"
@@ -28,6 +31,8 @@ import (
 	"github.com/neko233-com/struct233-go/ringbuffer"
 	"github.com/neko233-com/struct233-go/set"
 	"github.com/neko233-com/struct233-go/skiplist"
+	"github.com/neko233-com/struct233-go/ttlcache"
+	"github.com/neko233-com/struct233-go/unionfind"
 )
 
 // Comparator orders two keys: negative if a < b, zero if a == b, and
@@ -59,6 +64,12 @@ type (
 	BitSet = bitset.BitSet
 	// LRU is a fixed-capacity least-recently-used cache.
 	LRU[K comparable, V any] = lru.LRU[K, V]
+	// TTLCache is a goroutine-safe LRU cache with per-entry expiry.
+	TTLCache[K comparable, V any] = ttlcache.Cache[K, V]
+	// UnionFind partitions the indexes 0..N-1 into disjoint components.
+	UnionFind = unionfind.Set
+	// BloomFilter is a probabilistic set with no false negatives.
+	BloomFilter = bloomfilter.BloomFilter
 
 	// ConcurrentSet is a goroutine-safe unordered set.
 	ConcurrentSet[T comparable] = concurrent.Set[T]
@@ -69,6 +80,9 @@ type (
 	ConcurrentSkipList[K any, V any] = concurrent.SkipList[K, V]
 	// ConcurrentLRU is a goroutine-safe LRU cache.
 	ConcurrentLRU[K comparable, V any] = concurrent.LRU[K, V]
+	// ConcurrentQueue is a bounded blocking FIFO queue
+	// (java.util.concurrent.ArrayBlockingQueue).
+	ConcurrentQueue[T any] = concurrent.Queue[T]
 )
 
 // NewSet creates an unordered hash set, optionally pre-filled.
@@ -198,4 +212,33 @@ func NewConcurrentSkipListFunc[K any, V any](compare Comparator[K]) *ConcurrentS
 // capacity (> 0).
 func NewConcurrentLRU[K comparable, V any](capacity int) *ConcurrentLRU[K, V] {
 	return concurrent.NewLRU[K, V](capacity)
+}
+
+// NewConcurrentQueue creates a bounded blocking FIFO queue holding at most
+// capacity elements (> 0).
+func NewConcurrentQueue[T any](capacity int) *ConcurrentQueue[T] {
+	return concurrent.NewQueue[T](capacity)
+}
+
+// NewTTLCache creates a goroutine-safe cache with the given capacity (> 0)
+// and default time-to-live (> 0).
+func NewTTLCache[K comparable, V any](capacity int, ttl time.Duration) *TTLCache[K, V] {
+	return ttlcache.New[K, V](capacity, ttl)
+}
+
+// NewTTLCacheWithClock creates a TTL cache reading the current time from now,
+// which keeps tests deterministic.
+func NewTTLCacheWithClock[K comparable, V any](capacity int, ttl time.Duration, now func() time.Time) *TTLCache[K, V] {
+	return ttlcache.NewWithClock[K, V](capacity, ttl, now)
+}
+
+// NewUnionFind creates a disjoint-set union over the indexes 0..n-1.
+func NewUnionFind(n int) *UnionFind {
+	return unionfind.New(n)
+}
+
+// NewBloomFilter creates a probabilistic set sized for expectedItems elements
+// with the given false-positive rate (0 < rate < 1).
+func NewBloomFilter(expectedItems int, falsePositiveRate float64) *BloomFilter {
+	return bloomfilter.New(expectedItems, falsePositiveRate)
 }

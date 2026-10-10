@@ -3,6 +3,7 @@ package struct233_test
 import (
 	"fmt"
 	"sort"
+	"time"
 
 	struct233 "github.com/neko233-com/struct233-go"
 )
@@ -146,4 +147,56 @@ func ExampleNewConcurrentSkipList() {
 	// Output:
 	// p2 250
 	// [100 250]
+}
+
+func ExampleNewConcurrentQueue() {
+	jobs := struct233.NewConcurrentQueue[int](2) // bounded blocking queue
+	jobs.Put(1)
+	jobs.Put(2)
+
+	fmt.Println(jobs.TryPut(3)) // no space left
+
+	first, _ := jobs.Take()
+	fmt.Println(first, jobs.Len())
+	// Output:
+	// false
+	// 1 1
+}
+
+func ExampleNewTTLCache() {
+	cache := struct233.NewTTLCache[string, int](128, time.Minute)
+	cache.Put("session", 7)
+
+	v, ok := cache.Get("session")
+	fmt.Println(v, ok)
+	fmt.Println(cache.Contains("missing"), cache.Len())
+	// Output:
+	// 7 true
+	// false 1
+}
+
+func ExampleNewUnionFind() {
+	groups := struct233.NewUnionFind(5)
+	groups.Union(0, 1)
+	groups.Union(1, 2)
+
+	fmt.Println(groups.Connected(0, 2))
+	fmt.Println(groups.Size(0), groups.Count())
+	// Output:
+	// true
+	// 3 3
+}
+
+func ExampleNewBloomFilter() {
+	seen := struct233.NewBloomFilter(1000, 0.01) // 1% false positives
+	seen.AddString("token-1")
+	seen.AddUint64(42)
+
+	fmt.Println(seen.TestString("token-1"))
+	fmt.Println(seen.TestUint64(42))
+	fmt.Println(seen.Count(), seen.K())
+	// Output:
+	// true
+	// true
+	// 2 7
 }

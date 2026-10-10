@@ -4,6 +4,26 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - 2026-10-10
+
+### Added
+
+- `bloomfilter`: space-efficient probabilistic set with no false negatives
+  (string/bytes/uint64 keys, FNV-1a + splitmix64 double hashing, tunable
+  false-positive rate).
+- `unionfind`: disjoint-set union with path compression and union by size
+  (`Find`, `Union`, `Connected`, `Size`, `Components`).
+- `ttlcache`: goroutine-safe cache that combines LRU eviction with per-entry
+  time-to-live and an injectable clock (`PutWithTTL`, lazy expiry, `Cleanup`).
+- `concurrent.Queue`: bounded blocking FIFO queue with `ArrayBlockingQueue`
+  semantics (`Put`, `Offer` with timeout, `Take`, `Poll`, `TryPut`,
+  `TryTake`, `Close`).
+- Facade factories and aliases for all of the above: `NewBloomFilter`,
+  `NewUnionFind`, `NewTTLCache`, `NewTTLCacheWithClock`, `NewConcurrentQueue`.
+- Fuzz targets comparing `skiplist`, `bitset`, `ringbuffer` and `linkedmap`
+  against reference implementations.
+- Godoc coverage check: 304 exported symbols, 0 undocumented.
+
 ## [0.1.0] - 2026-10-10
 
 First release as **struct233-go** (formerly `go-data-struct-lib`).
@@ -36,4 +56,5 @@ First release as **struct233-go** (formerly `go-data-struct-lib`).
 - testify-based test suite, runnable examples, and GitHub Actions CI
   (format, vet, test with `-race`, benchmarks).
 
+[0.2.0]: https://github.com/neko233-com/struct233-go/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/neko233-com/struct233-go/releases/tag/v0.1.0
