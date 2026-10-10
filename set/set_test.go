@@ -4,205 +4,232 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/neko233-com/go-data-struct-lib/set"
 )
 
 func TestHashSetBasics(t *testing.T) {
 	s := set.NewHashSet(1, 2, 3)
-	if s.Len() != 3 {
-		t.Fatalf("Len = %d; want 3", s.Len())
-	}
-	if s.Add(3) {
-		t.Fatal("re-adding an existing element should report false")
-	}
-	if !s.Add(4) {
-		t.Fatal("adding a new element should report true")
-	}
-	if !s.ContainsAll(1, 2, 3, 4) {
-		t.Fatal("ContainsAll mismatch")
-	}
-	if s.Contains(5) {
-		t.Fatal("Contains(5) should be false")
-	}
-	if !s.Remove(4) || s.Remove(4) {
-		t.Fatal("Remove should report true exactly once")
-	}
+	require.Equal(t, 3, s.Len())
+
+	require.False(t, s.Add(3), "re-adding an existing element must report false")
+	require.True(t, s.Add(4), "adding a new element must report true")
+	require.True(t, s.ContainsAll(1, 2, 3, 4))
+	require.False(t, s.Contains(5))
+
+	require.True(t, s.Remove(4))
+	require.False(t, s.Remove(4), "Remove must report true exactly once")
+
+	items := s.ToSlice()
+	slices.Sort(items)
+	require.Equal(t, []int{1, 2, 3}, items)
+
 	s.Clear()
-	if s.Len() != 0 || s.Contains(1) {
-		t.Fatal("set should be empty after Clear")
+	require.Zero(t, s.Len())
+	require.False(t, s.Contains(1))
+}
+
+func TestHashSetWithCapacity(t *testing.T) {
+	s := set.NewHashSetWithCapacity(64, 1, 2, 3)
+	require.Equal(t, 3, s.Len())
+	require.True(t, s.ContainsAll(1, 2, 3))
+
+	for i := range 100 {
+		s.Add(i)
 	}
+	require.Equal(t, 100, s.Len())
+
+	empty := set.NewHashSetWithCapacity[int](8)
+	require.Zero(t, empty.Len())
+	require.False(t, empty.Contains(0))
 }
 
 func TestHashSetAlgebra(t *testing.T) {
 	a := set.NewHashSet(1, 2, 3, 4)
 	b := set.NewHashSet(3, 4, 5)
 
-	if got := a.Union(b); !got.Equal(set.NewHashSet(1, 2, 3, 4, 5)) {
-		t.Fatalf("Union = %v", got.ToSlice())
-	}
-	if got := a.Intersection(b); !got.Equal(set.NewHashSet(3, 4)) {
-		t.Fatalf("Intersection = %v", got.ToSlice())
-	}
-	if got := a.Difference(b); !got.Equal(set.NewHashSet(1, 2)) {
-		t.Fatalf("Difference = %v", got.ToSlice())
-	}
-	if got := a.SymmetricDifference(b); !got.Equal(set.NewHashSet(1, 2, 5)) {
-		t.Fatalf("SymmetricDifference = %v", got.ToSlice())
-	}
-	if !a.Intersection(b).IsSubsetOf(a) || !a.IsSupersetOf(a.Intersection(b)) {
-		t.Fatal("subset/superset check failed")
-	}
-	if a.IsSubsetOf(b) {
-		t.Fatal("a is not a subset of b")
-	}
-	// algebra ops must not mutate receivers
-	if a.Len() != 4 || b.Len() != 3 {
-		t.Fatal("algebra operations mutated their receivers")
-	}
+	require.True(t, a.Union(b).Equal(set.NewHashSet(1, 2, 3, 4, 5)))
+	require.True(t, a.Intersection(b).Equal(set.NewHashSet(3, 4)))
+	require.True(t, a.Difference(b).Equal(set.NewHashSet(1, 2)))
+	require.True(t, a.SymmetricDifference(b).Equal(set.NewHashSet(1, 2, 5)))
+
+	require.True(t, a.Intersection(b).IsSubsetOf(a))
+	require.True(t, a.IsSupersetOf(a.Intersection(b)))
+	require.False(t, a.IsSubsetOf(b))
+	require.True(t, a.IsSubsetOf(a))
+
+	require.Equal(t, 4, a.Len(), "algebra operations must not mutate the receiver")
+	require.Equal(t, 3, b.Len(), "algebra operations must not mutate the argument")
 }
 
 func TestHashSetClone(t *testing.T) {
 	a := set.NewHashSet("x", "y")
 	c := a.Clone()
 	c.Add("z")
-	if a.Contains("z") {
-		t.Fatal("Clone should be independent of the original")
+
+	require.False(t, a.Contains("z"), "Clone must be independent of the original")
+	require.True(t, c.Contains("z"))
+	require.True(t, c.IsSupersetOf(a))
+}
+
+func TestHashSetAll(t *testing.T) {
+	s := set.NewHashSet(1, 2, 3)
+	var iterated []int
+	for v := range s.All() {
+		iterated = append(iterated, v)
 	}
+	slices.Sort(iterated)
+	require.Equal(t, []int{1, 2, 3}, iterated)
+
+	count := 0
+	for range s.All() {
+		count++
+		break
+	}
+	require.Equal(t, 1, count, "break must stop the iteration")
+}
+
+func TestContainsDoesNotAllocate(t *testing.T) {
+	s := set.NewHashSetWithCapacity[int](128)
+	for i := range 64 {
+		s.Add(i)
+	}
+
+	allocs := testing.AllocsPerRun(100, func() { s.Contains(32) })
+	require.Zero(t, allocs, "HashSet.Contains must not allocate")
 }
 
 func TestTreeSetOrdered(t *testing.T) {
 	ts := set.NewTreeSet(5, 1, 9, 3, 7)
-	if got := ts.ToSlice(); !slices.Equal(got, []int{1, 3, 5, 7, 9}) {
-		t.Fatalf("ToSlice = %v; want ascending", got)
-	}
+	require.Equal(t, []int{1, 3, 5, 7, 9}, ts.ToSlice())
+
 	var iterated []int
 	for k := range ts.All() {
 		iterated = append(iterated, k)
 	}
-	if !slices.Equal(iterated, []int{1, 3, 5, 7, 9}) {
-		t.Fatalf("All() = %v", iterated)
-	}
-	if k, ok := ts.First(); !ok || k != 1 {
-		t.Fatalf("First = %d, %v", k, ok)
-	}
-	if k, ok := ts.Last(); !ok || k != 9 {
-		t.Fatalf("Last = %d, %v", k, ok)
-	}
+	require.Equal(t, []int{1, 3, 5, 7, 9}, iterated)
+
+	first, ok := ts.First()
+	require.True(t, ok)
+	require.Equal(t, 1, first)
+	last, ok := ts.Last()
+	require.True(t, ok)
+	require.Equal(t, 9, last)
+
+	require.True(t, ts.Add(0))
+	require.False(t, ts.Add(0), "duplicate Add must report false")
+	require.True(t, ts.Remove(0))
+	require.False(t, ts.Remove(0))
+	require.Equal(t, 5, ts.Len())
 }
 
 func TestTreeSetNavigable(t *testing.T) {
 	ts := set.NewTreeSet(10, 20, 30, 40, 50)
 
-	if k, ok := ts.Ceiling(35); !ok || k != 40 {
-		t.Fatalf("Ceiling(35) = %d, %v", k, ok)
-	}
-	if k, ok := ts.Lower(30); !ok || k != 20 {
-		t.Fatalf("Lower(30) = %d, %v", k, ok)
-	}
-	if k, ok := ts.Higher(30); !ok || k != 40 {
-		t.Fatalf("Higher(30) = %d, %v", k, ok)
-	}
-	if k, ok := ts.Floor(35); !ok || k != 30 {
-		t.Fatalf("Floor(35) = %d, %v", k, ok)
-	}
-	if _, ok := ts.Lower(10); ok {
-		t.Fatal("Lower(10) should miss")
-	}
-	if _, ok := ts.Higher(50); ok {
-		t.Fatal("Higher(50) should miss")
-	}
-	if _, ok := ts.Ceiling(51); ok {
-		t.Fatal("Ceiling(51) should miss")
-	}
+	k, ok := ts.Ceiling(35)
+	require.True(t, ok)
+	require.Equal(t, 40, k)
+
+	k, ok = ts.Floor(35)
+	require.True(t, ok)
+	require.Equal(t, 30, k)
+
+	k, ok = ts.Lower(30)
+	require.True(t, ok)
+	require.Equal(t, 20, k)
+
+	k, ok = ts.Higher(30)
+	require.True(t, ok)
+	require.Equal(t, 40, k)
+
+	_, ok = ts.Lower(10)
+	require.False(t, ok, "Lower(min) must miss")
+	_, ok = ts.Higher(50)
+	require.False(t, ok, "Higher(max) must miss")
+	_, ok = ts.Ceiling(51)
+	require.False(t, ok, "Ceiling(above max) must miss")
+
+	empty := set.NewTreeSet[int]()
+	_, ok = empty.First()
+	require.False(t, ok, "First on empty set must miss")
+	_, ok = empty.Last()
+	require.False(t, ok, "Last on empty set must miss")
 }
 
 func TestTreeSetRange(t *testing.T) {
 	ts := set.NewTreeSet(10, 20, 30, 40, 50)
-	var got []int
+
+	var exclusive []int
 	for k := range ts.Range(20, 40, false, false) {
-		got = append(got, k)
+		exclusive = append(exclusive, k)
 	}
-	if !slices.Equal(got, []int{30}) {
-		t.Fatalf("exclusive Range = %v; want [30]", got)
-	}
-	got = nil
+	require.Equal(t, []int{30}, exclusive)
+
+	var inclusive []int
 	for k := range ts.Range(15, 45, true, true) {
-		got = append(got, k)
+		inclusive = append(inclusive, k)
 	}
-	if !slices.Equal(got, []int{20, 30, 40}) {
-		t.Fatalf("inclusive Range = %v; want [20 30 40]", got)
-	}
+	require.Equal(t, []int{20, 30, 40}, inclusive)
 }
 
 func TestTreeSetCustomComparator(t *testing.T) {
-	// descending order
 	ts := set.NewTreeSetFunc(func(a, b int) int { return b - a }, 3, 1, 2)
-	if got := ts.ToSlice(); !slices.Equal(got, []int{3, 2, 1}) {
-		t.Fatalf("ToSlice = %v; want descending", got)
-	}
-	if k, ok := ts.First(); !ok || k != 3 {
-		t.Fatalf("First = %d, %v; want 3", k, ok)
-	}
+	require.Equal(t, []int{3, 2, 1}, ts.ToSlice(), "descending comparator order")
+
+	first, ok := ts.First()
+	require.True(t, ok)
+	require.Equal(t, 3, first, "reversed comparator must flip First")
 }
 
-func TestTreeSetAlgebra(t *testing.T) {
+func TestTreeSetAlgebraAndClone(t *testing.T) {
 	a := set.NewTreeSet(1, 2, 3)
 	b := set.NewTreeSet(2, 3, 4)
 
-	if got := a.Union(b); !got.Equal(set.NewTreeSet(1, 2, 3, 4)) {
-		t.Fatalf("Union = %v", got.ToSlice())
-	}
-	if got := a.Intersection(b); !got.Equal(set.NewTreeSet(2, 3)) {
-		t.Fatalf("Intersection = %v", got.ToSlice())
-	}
-	if got := a.Difference(b); !got.Equal(set.NewTreeSet(1)) {
-		t.Fatalf("Difference = %v", got.ToSlice())
-	}
+	require.True(t, a.Union(b).Equal(set.NewTreeSet(1, 2, 3, 4)))
+	require.True(t, a.Intersection(b).Equal(set.NewTreeSet(2, 3)))
+	require.True(t, a.Difference(b).Equal(set.NewTreeSet(1)))
+
 	c := a.Clone()
 	c.Add(9)
-	if a.Contains(9) {
-		t.Fatal("Clone should be independent")
-	}
+	require.False(t, a.Contains(9), "Clone must be independent")
+	require.Equal(t, []int{1, 2, 3, 9}, c.ToSlice())
+}
+
+func TestTreeSetPanicsOnNilComparator(t *testing.T) {
+	require.Panics(t, func() { set.NewTreeSetFunc[int](nil) })
 }
 
 func TestLinkedHashSetOrder(t *testing.T) {
 	s := set.NewLinkedHashSet("a", "b", "c")
-	if got := s.ToSlice(); !slices.Equal(got, []string{"a", "b", "c"}) {
-		t.Fatalf("initial order = %v", got)
-	}
-	// re-add existing: order unchanged (JDK LinkedHashSet semantics)
-	s.Add("a")
-	if got := s.ToSlice(); !slices.Equal(got, []string{"a", "b", "c"}) {
-		t.Fatalf("re-add changed order: %v", got)
-	}
-	// remove middle, then re-add: goes to the end
-	s.Remove("b")
-	s.Add("b")
-	if got := s.ToSlice(); !slices.Equal(got, []string{"a", "c", "b"}) {
-		t.Fatalf("order after remove+re-add = %v", got)
-	}
-	// iteration matches ToSlice
+	require.Equal(t, []string{"a", "b", "c"}, s.ToSlice())
+
+	// re-adding an existing element keeps its position (JDK semantics)
+	require.False(t, s.Add("a"))
+	require.Equal(t, []string{"a", "b", "c"}, s.ToSlice())
+
+	// remove then re-add moves the element to the end
+	require.True(t, s.Remove("b"))
+	require.True(t, s.Add("b"))
+	require.Equal(t, []string{"a", "c", "b"}, s.ToSlice())
+
 	var iterated []string
 	for k := range s.All() {
 		iterated = append(iterated, k)
 	}
-	if !slices.Equal(iterated, s.ToSlice()) {
-		t.Fatalf("All() = %v, ToSlice = %v", iterated, s.ToSlice())
-	}
+	require.Equal(t, s.ToSlice(), iterated, "All must follow ToSlice order")
+
 	s.Clear()
-	if s.Len() != 0 || !s.Equal(set.NewLinkedHashSet[string]()) {
-		t.Fatal("set should be empty after Clear")
-	}
+	require.Zero(t, s.Len())
+	require.True(t, s.Equal(set.NewLinkedHashSet[string]()))
 }
 
 func TestLinkedHashSetClone(t *testing.T) {
 	s := set.NewLinkedHashSet(1, 2, 3)
 	c := s.Clone()
-	c.Remove(1)
-	if !s.Contains(1) {
-		t.Fatal("Clone should be independent of the original")
-	}
-	if !c.Equal(set.NewLinkedHashSet(2, 3)) {
-		t.Fatalf("clone contents = %v", c.ToSlice())
-	}
+	require.True(t, c.Remove(1))
+
+	require.True(t, s.Contains(1), "Clone must be independent")
+	require.False(t, c.Equal(s), "Equal is order sensitive")
+	require.True(t, c.Equal(set.NewLinkedHashSet(2, 3)))
 }

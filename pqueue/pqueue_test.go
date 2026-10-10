@@ -5,17 +5,18 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/neko233-com/go-data-struct-lib/pqueue"
 )
 
 func TestMinQueueDefaultOrder(t *testing.T) {
 	q := pqueue.New[int]()
-	if _, ok := q.Pop(); ok {
-		t.Fatal("Pop on empty queue should miss")
-	}
-	if _, ok := q.Peek(); ok {
-		t.Fatal("Peek on empty queue should miss")
-	}
+
+	_, ok := q.Pop()
+	require.False(t, ok, "Pop on empty queue must miss")
+	_, ok = q.Peek()
+	require.False(t, ok, "Peek on empty queue must miss")
 
 	items := make([]int, 1000)
 	rng := rand.New(rand.NewPCG(7, 7))
@@ -23,22 +24,19 @@ func TestMinQueueDefaultOrder(t *testing.T) {
 		items[i] = rng.IntN(100000)
 		q.Push(items[i])
 	}
-	if q.Len() != len(items) {
-		t.Fatalf("Len = %d; want %d", q.Len(), len(items))
-	}
-	if k, ok := q.Peek(); !ok || k != slices.Min(items) {
-		t.Fatalf("Peek = %d, %v; want %d", k, ok, slices.Min(items))
-	}
+	require.Equal(t, len(items), q.Len())
+
+	top, ok := q.Peek()
+	require.True(t, ok)
+	require.Equal(t, slices.Min(items), top)
 
 	slices.Sort(items)
 	for i, want := range items {
-		if got, ok := q.Pop(); !ok || got != want {
-			t.Fatalf("Pop #%d = %d, %v; want %d", i, got, ok, want)
-		}
+		got, ok := q.Pop()
+		require.True(t, ok, "Pop #%d must succeed", i)
+		require.Equal(t, want, got, "Pop #%d must follow the min-heap order", i)
 	}
-	if q.Len() != 0 {
-		t.Fatal("queue should be empty after draining")
-	}
+	require.Zero(t, q.Len())
 }
 
 func TestMaxQueueCustomComparator(t *testing.T) {
@@ -46,7 +44,7 @@ func TestMaxQueueCustomComparator(t *testing.T) {
 	for _, v := range []int{5, 1, 9, 3} {
 		q.Push(v)
 	}
-	want := []int{9, 5, 3, 1}
+
 	var got []int
 	for {
 		v, ok := q.Pop()
@@ -55,14 +53,30 @@ func TestMaxQueueCustomComparator(t *testing.T) {
 		}
 		got = append(got, v)
 	}
-	if !slices.Equal(got, want) {
-		t.Fatalf("descending pops = %v; want %v", got, want)
+	require.Equal(t, []int{9, 5, 3, 1}, got, "reversed comparator must yield a max-queue")
+}
+
+func TestMinQueueCustomComparator(t *testing.T) {
+	q := pqueue.NewFunc(func(a, b int) int { return a - b })
+	q.Push(3)
+	q.Push(1)
+	q.Push(2)
+
+	var got []int
+	for {
+		v, ok := q.Pop()
+		if !ok {
+			break
+		}
+		got = append(got, v)
 	}
+	require.Equal(t, []int{1, 2, 3}, got)
 }
 
 func TestNewFromSlice(t *testing.T) {
 	src := []int{9, 4, 7, 1, 8}
 	q := pqueue.NewFromSlice(src, func(a, b int) int { return a - b })
+	require.Equal(t, len(src), q.Len())
 
 	var got []int
 	for {
@@ -72,50 +86,39 @@ func TestNewFromSlice(t *testing.T) {
 		}
 		got = append(got, v)
 	}
-	if !slices.Equal(got, []int{1, 4, 7, 8, 9}) {
-		t.Fatalf("heapify pops = %v", got)
-	}
-	// the input slice must not be reordered by heap construction
-	if !slices.Equal(src, []int{9, 4, 7, 1, 8}) {
-		t.Fatalf("input slice mutated: %v", src)
-	}
+	require.Equal(t, []int{1, 4, 7, 8, 9}, got)
+	require.Equal(t, []int{9, 4, 7, 1, 8}, src, "heap construction must not reorder the input slice")
 }
 
 func TestClear(t *testing.T) {
 	q := pqueue.New[int]()
 	q.Push(1)
 	q.Push(2)
+
 	q.Clear()
-	if q.Len() != 0 {
-		t.Fatalf("Len after Clear = %d", q.Len())
-	}
-	if _, ok := q.Pop(); ok {
-		t.Fatal("Pop after Clear should miss")
-	}
-	if _, ok := q.Peek(); ok {
-		t.Fatal("Peek after Clear should miss")
-	}
+	require.Zero(t, q.Len())
+	_, ok := q.Pop()
+	require.False(t, ok)
+	_, ok = q.Peek()
+	require.False(t, ok)
+
 	q.Push(3)
-	if v, ok := q.Peek(); !ok || v != 3 {
-		t.Fatal("queue unusable after Clear")
-	}
+	v, ok := q.Peek()
+	require.True(t, ok)
+	require.Equal(t, 3, v, "queue must stay usable after Clear")
 }
 
 func TestToSliceIsIndependent(t *testing.T) {
 	q := pqueue.New[int]()
 	q.Push(1)
+
 	s := q.ToSlice()
 	s[0] = 99
-	if v, _ := q.Peek(); v != 1 {
-		t.Fatal("ToSlice should return an independent copy")
-	}
+
+	v, _ := q.Peek()
+	require.Equal(t, 1, v, "ToSlice must return an independent copy")
 }
 
 func TestNewFuncPanicsOnNilComparator(t *testing.T) {
-	defer func() {
-		if recover() == nil {
-			t.Fatal("NewFunc with nil comparator should panic")
-		}
-	}()
-	pqueue.NewFunc[int](nil)
+	require.Panics(t, func() { pqueue.NewFunc[int](nil) })
 }

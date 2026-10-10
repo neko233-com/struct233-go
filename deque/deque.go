@@ -31,13 +31,23 @@ func (d *ArrayDeque[T]) Len() int { return d.size }
 // Cap returns the current backing-array capacity.
 func (d *ArrayDeque[T]) Cap() int { return len(d.buf) }
 
+// grow doubles the backing array with two block copies instead of a
+// per-element index walk.
 func (d *ArrayDeque[T]) grow() {
 	nbuf := make([]T, len(d.buf)*2)
-	for i := range d.size {
-		nbuf[i] = d.buf[(d.head+i)%len(d.buf)]
-	}
+	n := copy(nbuf, d.buf[d.head:])
+	copy(nbuf[n:], d.buf[:d.head])
 	d.buf = nbuf
 	d.head = 0
+}
+
+// backIndex returns the buffer index that follows the last element.
+func (d *ArrayDeque[T]) backIndex() int {
+	idx := d.head + d.size
+	if idx >= len(d.buf) {
+		idx -= len(d.buf)
+	}
+	return idx
 }
 
 // PushFront adds v to the front.
@@ -45,7 +55,11 @@ func (d *ArrayDeque[T]) PushFront(v T) {
 	if d.size == len(d.buf) {
 		d.grow()
 	}
-	d.head = (d.head - 1 + len(d.buf)) % len(d.buf)
+	if d.head == 0 {
+		d.head = len(d.buf) - 1
+	} else {
+		d.head--
+	}
 	d.buf[d.head] = v
 	d.size++
 }
@@ -55,7 +69,7 @@ func (d *ArrayDeque[T]) PushBack(v T) {
 	if d.size == len(d.buf) {
 		d.grow()
 	}
-	d.buf[(d.head+d.size)%len(d.buf)] = v
+	d.buf[d.backIndex()] = v
 	d.size++
 }
 
@@ -67,7 +81,9 @@ func (d *ArrayDeque[T]) PopFront() (T, bool) {
 	}
 	v := d.buf[d.head]
 	clear(d.buf[d.head : d.head+1])
-	d.head = (d.head + 1) % len(d.buf)
+	if d.head++; d.head == len(d.buf) {
+		d.head = 0
+	}
 	d.size--
 	return v, true
 }
@@ -78,7 +94,10 @@ func (d *ArrayDeque[T]) PopBack() (T, bool) {
 		var zero T
 		return zero, false
 	}
-	idx := (d.head + d.size - 1) % len(d.buf)
+	idx := d.head + d.size - 1
+	if idx >= len(d.buf) {
+		idx -= len(d.buf)
+	}
 	v := d.buf[idx]
 	clear(d.buf[idx : idx+1])
 	d.size--
@@ -100,7 +119,11 @@ func (d *ArrayDeque[T]) Back() (T, bool) {
 		var zero T
 		return zero, false
 	}
-	return d.buf[(d.head+d.size-1)%len(d.buf)], true
+	idx := d.head + d.size - 1
+	if idx >= len(d.buf) {
+		idx -= len(d.buf)
+	}
+	return d.buf[idx], true
 }
 
 // Clear removes all elements while keeping the allocated capacity.
@@ -113,9 +136,13 @@ func (d *ArrayDeque[T]) Clear() {
 // All iterates from front to back.
 func (d *ArrayDeque[T]) All() iter.Seq[T] {
 	return func(yield func(T) bool) {
-		for i := range d.size {
-			if !yield(d.buf[(d.head+i)%len(d.buf)]) {
+		idx := d.head
+		for range d.size {
+			if !yield(d.buf[idx]) {
 				return
+			}
+			if idx++; idx == len(d.buf) {
+				idx = 0
 			}
 		}
 	}
@@ -124,8 +151,12 @@ func (d *ArrayDeque[T]) All() iter.Seq[T] {
 // ToSlice returns the elements from front to back.
 func (d *ArrayDeque[T]) ToSlice() []T {
 	out := make([]T, d.size)
+	idx := d.head
 	for i := range d.size {
-		out[i] = d.buf[(d.head+i)%len(d.buf)]
+		out[i] = d.buf[idx]
+		if idx++; idx == len(d.buf) {
+			idx = 0
+		}
 	}
 	return out
 }

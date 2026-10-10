@@ -19,13 +19,18 @@ type BitSet struct {
 // New creates an empty BitSet.
 func New() *BitSet { return &BitSet{} }
 
+// ensure grows words so that word index w is addressable. The newly exposed
+// words are zero; slices.Grow reuses the backing array whenever possible.
+func (b *BitSet) ensure(w int) {
+	if need := w + 1 - len(b.words); need > 0 {
+		b.words = slices.Grow(b.words, need)[:w+1]
+	}
+}
+
 // Set sets the bit at index i.
 func (b *BitSet) Set(i int) {
-	w := i >> 6
-	if w >= len(b.words) {
-		b.words = append(b.words, make([]uint64, w+1-len(b.words))...)
-	}
-	b.words[w] |= 1 << uint(i&(wordSize-1))
+	b.ensure(i >> 6)
+	b.words[i>>6] |= 1 << uint(i&(wordSize-1))
 }
 
 // Clear unsets the bit at index i.
@@ -150,9 +155,7 @@ func (b *BitSet) And(other *BitSet) {
 
 // Or unions b with other (in place).
 func (b *BitSet) Or(other *BitSet) {
-	if len(other.words) > len(b.words) {
-		b.words = append(b.words, make([]uint64, len(other.words)-len(b.words))...)
-	}
+	b.ensure(len(other.words) - 1)
 	for i, w := range other.words {
 		b.words[i] |= w
 	}
@@ -160,9 +163,7 @@ func (b *BitSet) Or(other *BitSet) {
 
 // Xor toggles in b every bit that is set in other (in place).
 func (b *BitSet) Xor(other *BitSet) {
-	if len(other.words) > len(b.words) {
-		b.words = append(b.words, make([]uint64, len(other.words)-len(b.words))...)
-	}
+	b.ensure(len(other.words) - 1)
 	for i, w := range other.words {
 		b.words[i] ^= w
 	}

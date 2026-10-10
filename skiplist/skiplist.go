@@ -36,6 +36,9 @@ type SkipList[K any, V any] struct {
 	p        float64
 	head     *node[K, V]
 	size     int
+	// update is a scratch buffer reused by writes, so Put/Remove do not
+	// allocate per operation.
+	update []*node[K, V]
 }
 
 // New creates a SkipList ordered by the natural ordering of K.
@@ -54,6 +57,7 @@ func NewFunc[K any, V any](compare Comparator[K]) *SkipList[K, V] {
 		maxLevel: defaultMaxLevel,
 		p:        defaultP,
 		head:     &node[K, V]{forward: make([]*node[K, V], defaultMaxLevel)},
+		update:   make([]*node[K, V], defaultMaxLevel),
 	}
 }
 
@@ -69,9 +73,10 @@ func (s *SkipList[K, V]) randomLevel() int {
 }
 
 // predecessors returns, for every level, the rightmost node whose key is
-// strictly smaller than key.
+// strictly smaller than key. The result aliases the internal scratch
+// buffer and is valid until the next write.
 func (s *SkipList[K, V]) predecessors(key K) []*node[K, V] {
-	update := make([]*node[K, V], s.maxLevel)
+	update := s.update
 	cur := s.head
 	for level := s.maxLevel - 1; level >= 0; level-- {
 		for next := cur.forward[level]; next != nil && s.cmp(next.key, key) < 0; next = cur.forward[level] {
@@ -168,7 +173,7 @@ func (s *SkipList[K, V]) Remove(key K) (old V, removed bool) {
 
 // Clear removes all entries.
 func (s *SkipList[K, V]) Clear() {
-	s.head = &node[K, V]{forward: make([]*node[K, V], s.maxLevel)}
+	clear(s.head.forward)
 	s.size = 0
 }
 

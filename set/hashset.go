@@ -15,7 +15,13 @@ type HashSet[K comparable] struct {
 
 // NewHashSet creates a HashSet pre-filled with items.
 func NewHashSet[K comparable](items ...K) *HashSet[K] {
-	s := &HashSet[K]{m: make(map[K]struct{}, len(items))}
+	return NewHashSetWithCapacity(len(items), items...)
+}
+
+// NewHashSetWithCapacity creates a HashSet whose map is pre-sized for
+// capacity elements, avoiding rehashing while filling it.
+func NewHashSetWithCapacity[K comparable](capacity int, items ...K) *HashSet[K] {
+	s := &HashSet[K]{m: make(map[K]struct{}, capacity)}
 	s.AddAll(items...)
 	return s
 }
@@ -111,14 +117,19 @@ func (s *HashSet[K]) Equal(other *HashSet[K]) bool {
 
 // Union returns a new set with the elements of s and other.
 func (s *HashSet[K]) Union(other *HashSet[K]) *HashSet[K] {
-	out := s.Clone()
-	out.AddAll(other.ToSlice()...)
+	out := NewHashSetWithCapacity[K](s.Len() + other.Len())
+	for item := range s.m {
+		out.Add(item)
+	}
+	for item := range other.m {
+		out.Add(item)
+	}
 	return out
 }
 
 // Intersection returns a new set with the elements present in both sets.
 func (s *HashSet[K]) Intersection(other *HashSet[K]) *HashSet[K] {
-	out := NewHashSet[K]()
+	out := NewHashSetWithCapacity[K](min(s.Len(), other.Len()))
 	for item := range s.m {
 		if other.Contains(item) {
 			out.Add(item)
@@ -129,7 +140,7 @@ func (s *HashSet[K]) Intersection(other *HashSet[K]) *HashSet[K] {
 
 // Difference returns a new set with the elements of s that are not in other.
 func (s *HashSet[K]) Difference(other *HashSet[K]) *HashSet[K] {
-	out := NewHashSet[K]()
+	out := NewHashSetWithCapacity[K](s.Len())
 	for item := range s.m {
 		if !other.Contains(item) {
 			out.Add(item)
@@ -141,8 +152,17 @@ func (s *HashSet[K]) Difference(other *HashSet[K]) *HashSet[K] {
 // SymmetricDifference returns a new set with the elements that are in
 // exactly one of the two sets.
 func (s *HashSet[K]) SymmetricDifference(other *HashSet[K]) *HashSet[K] {
-	out := s.Difference(other)
-	out.AddAll(other.Difference(s).ToSlice()...)
+	out := NewHashSetWithCapacity[K](s.Len() + other.Len())
+	for item := range s.m {
+		if !other.Contains(item) {
+			out.Add(item)
+		}
+	}
+	for item := range other.m {
+		if !s.Contains(item) {
+			out.Add(item)
+		}
+	}
 	return out
 }
 
