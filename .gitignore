@@ -21,3 +21,6 @@ Thumbs.db
 
 # Local tooling
 .codely-cli/
+
+# Agent memory
+CODELY.md
