@@ -4,7 +4,7 @@ import (
 	"cmp"
 	"iter"
 
-	"github.com/neko233-com/go-data-struct-lib/skiplist"
+	"github.com/neko233-com/struct233-go/skiplist"
 )
 
 // TreeSet is a set that keeps its elements sorted,

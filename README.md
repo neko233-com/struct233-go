@@ -1,44 +1,53 @@
-# go-data-struct-lib
+# struct233-go
 
 Common data structures for Go, modeled after the JDK collection framework
 (`java.util` / `java.util.concurrent`). Java ships a rich toolbox of
 collections; this library brings the same vocabulary to Go with generics.
 
-- **One entry point** — `struct233.NewSet`, `struct233.NewSkipList`, …
+- **One entry point** — `struct233.NewSet`, `struct233.NewSkipList`,
+  `struct233.NewConcurrentLRU`, …
 - **High performance, low memory** — zero-allocation read paths, no per-write
   scratch allocations (see [Performance](#performance)).
+- **Goroutine-safe variants** — `Concurrent*` containers for cross-goroutine
+  sharing, mirroring the `java.util.concurrent` collections.
 - **testify test suite** — every container is covered by
   [`testify`](https://github.com/stretchr/testify) assertions, including
-  allocation guards for hot paths.
+  allocation guards for hot paths, runnable examples and CI.
 
 ## Structures
 
-| Package / alias     | Type                        | JDK analog                                                   |
-| ------------------- | --------------------------- | ------------------------------------------------------------ |
-| `struct233`         | facade (factories + aliases)| —                                                             |
-| `set` / `Set`       | `HashSet[K]`                | `HashSet`                                                     |
-| `set` / `LinkedSet` | `LinkedHashSet[K]`          | `LinkedHashSet` (insertion order)                             |
-| `set` / `SortedSet` | `TreeSet[K]`                | `TreeSet` (NavigableSet semantics)                            |
-| `skiplist`          | `SkipList[K, V]`            | `TreeMap` / `ConcurrentSkipListMap` (NavigableMap semantics)  |
-| `pqueue`            | `PriorityQueue[T]`          | `PriorityQueue` (binary heap)                                 |
-| `deque`             | `ArrayDeque[T]`             | `ArrayDeque` (FIFO queue + LIFO stack)                        |
-| `bitset`            | `BitSet`                    | `BitSet` (bit vector)                                         |
-| `lru`               | `LRU[K, V]`                 | `LinkedHashMap(accessOrder=true)` + `removeEldestEntry`       |
+| Facade alias        | Package       | JDK analog                                                   |
+| ------------------- | ------------- | ------------------------------------------------------------ |
+| `Set`               | `set`         | `HashSet`                                                    |
+| `LinkedSet`         | `set`         | `LinkedHashSet` (insertion order)                            |
+| `SortedSet`         | `set`         | `TreeSet` (NavigableSet semantics)                           |
+| `SkipList`          | `skiplist`    | `ConcurrentSkipListMap` / `TreeMap` (NavigableMap semantics)  |
+| `TreeMap`           | `skiplist`    | `TreeMap` (alias of `SkipList`)                               |
+| `LinkedMap`         | `linkedmap`   | `LinkedHashMap` (insertion order)                            |
+| `PriorityQueue`     | `pqueue`      | `PriorityQueue` (binary heap)                                |
+| `Deque`             | `deque`       | `ArrayDeque` (FIFO queue + LIFO stack)                       |
+| `RingBuffer`        | `ringbuffer`  | — (keep-newest-N buffer)                                     |
+| `BitSet`            | `bitset`      | `BitSet` (bit vector)                                        |
+| `LRU`               | `lru`         | `LinkedHashMap(accessOrder=true)` + `removeEldestEntry`      |
+| `ConcurrentSet`     | `concurrent`  | `ConcurrentHashMap` key set / synchronized `HashSet`         |
+| `ConcurrentMap`     | `concurrent`  | `ConcurrentHashMap` (atomic `GetOrPut`)                      |
+| `ConcurrentSkipList`| `concurrent`  | `ConcurrentSkipListMap`                                      |
+| `ConcurrentLRU`     | `concurrent`  | synchronized LRU cache                                       |
 
 ## Install
 
 ```
-go get github.com/neko233-com/go-data-struct-lib@v0.1.0
+go get github.com/neko233-com/struct233-go@v0.1.0
 ```
 
-Requires Go 1.24+.
+Requires Go 1.24+ (generic type aliases and range-over-func iterators).
 
 ## Usage
 
 Everything is reachable from the root package:
 
 ```go
-import "github.com/neko233-com/go-data-struct-lib"
+import "github.com/neko233-com/struct233-go"
 
 s := struct233.NewSet(1, 2, 3)
 s.Add(4)
@@ -61,6 +70,11 @@ for k, v := range sl.Range(10, 30, true, false) { // [10, 30)
     fmt.Println(k, v)
 }
 
+lm := struct233.NewLinkedMap[string, int]() // java.util.LinkedHashMap
+lm.Put("b", 1)
+lm.Put("a", 2)
+lm.Keys() // [b a]
+
 q := struct233.NewPriorityQueue[int]()   // min-heap on natural order
 q.Push(3)
 v, _ := q.Pop()                          // 3 -> 1 after pushing 1
@@ -71,6 +85,11 @@ d.PushBack(2)  // queue: offer
 d.PushFront(1)
 d.PopFront()   // 1 (queue: poll)
 d.PopBack()    // 2 (stack: pop)
+
+recent := struct233.NewRingBuffer[Damage](4096) // keeps the newest 4096 hits
+if evicted, ok := recent.Push(hit); ok {
+    recycle(evicted)
+}
 
 b := struct233.NewBitSet()
 b.Set(1000)
@@ -91,18 +110,47 @@ if ek, _, evicted := cache.Put("other", data2); evicted {
 
 The `struct233` types are **aliases** of the implementations in the
 subpackages, so the facade adds no indirection and the advanced API stays
-available. For custom ordering use `NewSortedSetFunc`, `NewSkipListFunc`,
-`NewPriorityQueueFunc`; `struct233.Comparator[K]` documents the comparator
-contract (negative / zero / positive, same as `java.util.Comparator`).
+available. For custom ordering use `NewSortedSetFunc`, `NewSkipListFunc` /
+`NewTreeMapFunc`, `NewPriorityQueueFunc`, `NewConcurrentSkipListFunc`;
+`struct233.Comparator[K]` documents the comparator contract (negative / zero /
+positive, same as `java.util.Comparator`).
+
+### Goroutine-safe containers
+
+The plain containers are unsynchronized (like `java.util`). Share state across
+goroutines with the `Concurrent*` types:
+
+```go
+ranking := struct233.NewConcurrentSkipList[int64, string]() // score -> player
+ranking.Put(1200, "p1")
+ranking.Put(1500, "p2")
+top, name, _ := ranking.Last() // 1500 p2
+for score, player := range ranking.Range(1000, 2000, true, true) {
+    fmt.Println(score, player)
+}
+
+seen := struct233.NewConcurrentSetWithCapacity[int64](1 << 16)
+if seen.Add(uid) { /* first time */ }
+
+sessions := struct233.NewConcurrentMapWithCapacity[int64, *Session](1024)
+sess, _ := sessions.GetOrPut(uid, func() *Session { return newSession(uid) }) // atomic
+
+sessCache := struct233.NewConcurrentLRU[int64, *Session](4096)
+```
+
+All methods take the internal lock for one operation; iteration methods
+(`All`, `Range`, `Keys`, `Values`, `ToSlice`, `Snapshot`) return a **snapshot**
+taken under the lock, so ranging never blocks writers.
 
 ### Pre-sized construction
 
 When the element count is known up front, skip the rehashing:
 
 ```go
-s := struct233.NewSetWithCapacity[int](1024) // map pre-sized for 1024 keys
-q := struct233.NewPriorityQueueFromSlice(items, cmp) // O(n) heapify
-d := struct233.NewDeque[int](4096) // pre-allocated ring buffer
+s := struct233.NewSetWithCapacity[int](1024)          // map pre-sized for 1024 keys
+m := struct233.NewConcurrentMapWithCapacity[int64, *Session](4096)
+q := struct233.NewPriorityQueueFromSlice(items, cmp)  // O(n) heapify
+d := struct233.NewDeque[int](4096)                    // pre-allocated ring buffer
 ```
 
 ## Performance
@@ -113,13 +161,16 @@ Windows, Go 1.27 (`B/op` = bytes allocated per operation):
 | Operation                            | ns/op | B/op  | allocs/op |
 | ------------------------------------ | ----- | ----- | --------- |
 | `BitSet.Get`                         | 0.58  | 0     | 0         |
+| `RingBuffer.Push` (with eviction)    | 0.79  | 0     | 0         |
 | `BitSet.Set`                         | 0.82  | 0     | 0         |
 | `PriorityQueue.Pop`                  | 0.86  | 0     | 0         |
 | `Deque.PushFront` + `PopBack`        | 1.66  | 0     | 0         |
 | `Deque.PushBack` + `PopFront`        | 2.10  | 0     | 0         |
 | `HashSet.Contains`                   | 3.63  | 0     | 0         |
 | `Deque.PushBack`                     | 3.70  | 31    | 0         |
+| `LinkedMap.Get`                      | 4.07  | 0     | 0         |
 | `LRU.Peek`                           | 4.49  | 0     | 0         |
+| `LinkedMap.Put` (update)             | 4.90  | 0     | 0         |
 | `PriorityQueue.Push`                 | 8.51  | 46    | 0         |
 | `LRU.Get` (promotes)                 | 8.84  | 0     | 0         |
 | `LRU.Put` (update)                   | 11.28 | 0     | 0         |
@@ -127,6 +178,7 @@ Windows, Go 1.27 (`B/op` = bytes allocated per operation):
 | `BitSet.Or`                          | 29.12 | 0     | 0         |
 | `PriorityQueue.Push` + `Pop`         | 30.67 | 0     | 0         |
 | `LinkedHashSet.Add`                  | 81.32 | 78    | 1         |
+| `LinkedMap.Put` (insert)             | 104.9 | 107   | 1         |
 | `SkipList.Get`                       | 134.2 | 0     | 0         |
 | `TreeSet.Add`                        | 140.7 | 42    | 2         |
 | `SkipList.Put`                       | 154.6 | 58    | 2         |
@@ -135,15 +187,27 @@ Windows, Go 1.27 (`B/op` = bytes allocated per operation):
 | `PriorityQueue.NewFromSlice` (1024)  | 3899  | 8224  | 2         |
 | `HashSet.Union` (512 + 512)          | 18002 | 37000 | 7         |
 
+Goroutine-safe containers, measured with `b.RunParallel` on 32 threads
+(dominated by the lock, all zero-allocation):
+
+| Operation                    | ns/op |
+| ---------------------------- | ----- |
+| `ConcurrentSkipList.Get`     | 23.6  |
+| `ConcurrentMap.Get`          | 26.7  |
+| `ConcurrentSet.Contains`     | 28.4  |
+| `ConcurrentLRU.Get`          | 56.4  |
+| `ConcurrentSet.Add`          | 63.5  |
+
 Allocation design (asserted by tests such as `TestReadPathsDoNotAllocate`,
-`TestPushPopDoesNotAllocate`, `TestReadsDoNotAllocate`):
+`TestPushPopDoesNotAllocate`, `TestReadsDoNotAllocate`,
+`TestPushWithEvictionDoesNotAllocate`):
 
 - reads (`Get` / `Contains` / `Peek` / `Front` / `Cardinality`) never allocate;
 - writes reuse internal buffers — the skip list keeps a per-instance update
   buffer and the bit set grows its word slice in place, so `Put` / `Set` cost
   one allocation for the new entry itself and nothing else;
-- steady-state queue/deque traffic (`Push`+`Pop`) is allocation-free once the
-  backing array has grown;
+- steady-state queue/deque/ring-buffer traffic (`Push` + `Pop`) is
+  allocation-free once the backing array has grown;
 - set algebra ships a pre-sized result map instead of intermediate slices.
 
 ## Design notes
@@ -152,10 +216,19 @@ Allocation design (asserted by tests such as `TestReadPathsDoNotAllocate`,
   ordering and accept a `Comparator` for custom ordering.
 - **Iterators.** Containers expose `All()` / `Range(...)` returning
   `iter.Seq` / `iter.Seq2`, usable with `range` and early `break`.
-- **Not concurrency-safe.** Like `java.util` collections, instances are
-  unsynchronized; guard them externally when shared.
-- **Tests.** The suite uses `testify` (`require` / `assert`) and includes
-  benchmarks per package plus allocation guards for hot paths.
+- **Concurrency.** Plain containers are unsynchronized; `concurrent.*`
+  (`Concurrent*` aliases) wraps them with an `RWMutex`/`Mutex` and snapshots
+  every iteration, so callers never hold the lock while consuming.
+- **Tests.** The suite uses `testify` (`require` / `assert`), ships benchmarks
+  plus allocation guards for hot paths, and runs `gofmt` / `go vet` /
+  `go test -race` in CI.
+
+## Roadmap
+
+- `BloomFilter` and `DelayQueue` style containers.
+- Lock-free concurrent skip list (CAS-based, as in the JDK) in place of the
+  mutex-wrapped variant.
+- Generated API documentation on `pkg.go.dev`.
 
 ## License
 

@@ -3,7 +3,7 @@ package lru_test
 import (
 	"testing"
 
-	"github.com/neko233-com/go-data-struct-lib/lru"
+	"github.com/neko233-com/struct233-go/lru"
 )
 
 func benchLRU(n int) *lru.LRU[int, int] {

@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/neko233-com/go-data-struct-lib/lru"
+	"github.com/neko233-com/struct233-go/lru"
 )
 
 func TestEviction(t *testing.T) {

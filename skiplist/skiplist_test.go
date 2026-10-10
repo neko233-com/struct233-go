@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/neko233-com/go-data-struct-lib/skiplist"
+	"github.com/neko233-com/struct233-go/skiplist"
 )
 
 func mustGet[K comparable, V any](t *testing.T, sl *skiplist.SkipList[K, V], key K) V {

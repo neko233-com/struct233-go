@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/neko233-com/go-data-struct-lib/pqueue"
+	"github.com/neko233-com/struct233-go/pqueue"
 )
 
 // TestPushPopDoesNotAllocate guards the steady-state Push/Pop path: once the

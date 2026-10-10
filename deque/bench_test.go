@@ -3,7 +3,7 @@ package deque_test
 import (
 	"testing"
 
-	"github.com/neko233-com/go-data-struct-lib/deque"
+	"github.com/neko233-com/struct233-go/deque"
 )
 
 func BenchmarkDequePushBackPopFront(b *testing.B) {

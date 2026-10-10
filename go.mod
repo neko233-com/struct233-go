@@ -1,4 +1,4 @@
-module github.com/neko233-com/go-data-struct-lib
+module github.com/neko233-com/struct233-go
 
 go 1.24
 

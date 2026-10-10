@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/neko233-com/go-data-struct-lib/pqueue"
+	"github.com/neko233-com/struct233-go/pqueue"
 )
 
 func TestMinQueueDefaultOrder(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/neko233-com/go-data-struct-lib/bitset"
+	"github.com/neko233-com/struct233-go/bitset"
 )
 
 func TestSetGetClearFlip(t *testing.T) {

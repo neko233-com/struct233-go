@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/neko233-com/go-data-struct-lib/set"
+	"github.com/neko233-com/struct233-go/set"
 )
 
 func TestHashSetBasics(t *testing.T) {

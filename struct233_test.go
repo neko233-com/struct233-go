@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	struct233 "github.com/neko233-com/go-data-struct-lib"
+	struct233 "github.com/neko233-com/struct233-go"
 )
 
 func TestNewSet(t *testing.T) {
@@ -60,6 +60,29 @@ func TestNewSkipList(t *testing.T) {
 	require.Equal(t, "c", revKey, "custom comparator must be honoured")
 }
 
+func TestNewTreeMap(t *testing.T) {
+	tm := struct233.NewTreeMap[int, string]()
+	tm.Put(5, "e")
+	tm.Put(1, "a")
+
+	require.Equal(t, []int{1, 5}, tm.Keys())
+
+	tmFunc := struct233.NewTreeMapFunc[int, string](func(a, b int) int { return b - a })
+	tmFunc.Put(1, "a")
+	tmFunc.Put(5, "e")
+	require.Equal(t, []int{5, 1}, tmFunc.Keys(), "reversed comparator must be honoured")
+}
+
+func TestNewLinkedMap(t *testing.T) {
+	m := struct233.NewLinkedMap[string, int]()
+	m.Put("b", 1)
+	m.Put("a", 2)
+	m.Put("b", 3) // update must not reorder
+
+	require.Equal(t, []string{"b", "a"}, m.Keys())
+	require.Equal(t, []int{3, 2}, m.Values())
+}
+
 func TestNewPriorityQueue(t *testing.T) {
 	q := struct233.NewPriorityQueue[int]()
 	q.Push(3)
@@ -101,6 +124,22 @@ func TestNewDeque(t *testing.T) {
 	require.GreaterOrEqual(t, noCap.Cap(), 8)
 }
 
+func TestNewRingBuffer(t *testing.T) {
+	r := struct233.NewRingBuffer[int](3)
+	require.Equal(t, 3, r.Cap())
+
+	r.Push(1)
+	r.Push(2)
+	r.Push(3)
+
+	evicted, ok := r.Push(4)
+	require.True(t, ok)
+	require.Equal(t, 1, evicted, "the oldest element must be overwritten")
+	require.Equal(t, []int{2, 3, 4}, r.ToSlice())
+
+	require.Panics(t, func() { struct233.NewRingBuffer[int](0) })
+}
+
 func TestNewBitSet(t *testing.T) {
 	b := struct233.NewBitSet()
 	b.Set(7)
@@ -128,6 +167,41 @@ func TestNewLRU(t *testing.T) {
 	require.Equal(t, 2, c.Len())
 }
 
+func TestNewConcurrentContainers(t *testing.T) {
+	cs := struct233.NewConcurrentSetWithCapacity[int](8)
+	require.True(t, cs.Add(1))
+	require.True(t, cs.Contains(1))
+
+	cm := struct233.NewConcurrentMapWithCapacity[string, int](8)
+	cm.Put("a", 1)
+	v, loaded := cm.GetOrPut("a", func() int { return 99 })
+	require.True(t, loaded)
+	require.Equal(t, 1, v, "GetOrPut must keep the existing value")
+
+	// the no-capacity constructors must work too
+	require.True(t, struct233.NewConcurrentSet[int]().Add(1))
+	require.Zero(t, struct233.NewConcurrentMap[int, int]().Len())
+
+	csl := struct233.NewConcurrentSkipList[int, string]()
+	csl.Put(2, "b")
+	csl.Put(1, "a")
+	require.Equal(t, []int{1, 2}, csl.Keys())
+
+	cslFunc := struct233.NewConcurrentSkipListFunc[string, int](func(a, b string) int { return strings.Compare(b, a) })
+	cslFunc.Put("a", 1)
+	cslFunc.Put("c", 3)
+	k, _, ok := cslFunc.First()
+	require.True(t, ok)
+	require.Equal(t, "c", k)
+
+	cl := struct233.NewConcurrentLRU[int, int](2)
+	cl.Put(1, 1)
+	cl.Put(2, 2)
+	cl.Put(3, 3)
+	require.Equal(t, 2, cl.Len())
+	require.False(t, cl.Contains(1), "the least recently used entry must be evicted")
+}
+
 // TestAliasesAreTheImplementationTypes proves the facade returns the concrete
 // container types, so no wrapper indirection is introduced.
 func TestAliasesAreTheImplementationTypes(t *testing.T) {
@@ -138,6 +212,10 @@ func TestAliasesAreTheImplementationTypes(t *testing.T) {
 	var d *struct233.Deque[int] = struct233.NewDeque[int]()
 	d.PushBack(1)
 	require.Equal(t, 1, d.Len())
+
+	var tm *struct233.TreeMap[int, int] = struct233.NewTreeMap[int, int]()
+	tm.Put(1, 1)
+	require.Equal(t, 1, tm.Len())
 }
 
 func BenchmarkFacadeNewSetAndAdd(b *testing.B) {

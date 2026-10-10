@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/neko233-com/go-data-struct-lib/deque"
+	"github.com/neko233-com/struct233-go/deque"
 )
 
 func TestFIFO(t *testing.T) {

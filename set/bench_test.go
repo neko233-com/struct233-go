@@ -3,7 +3,7 @@ package set_test
 import (
 	"testing"
 
-	"github.com/neko233-com/go-data-struct-lib/set"
+	"github.com/neko233-com/struct233-go/set"
 )
 
 func BenchmarkHashSetAdd(b *testing.B) {

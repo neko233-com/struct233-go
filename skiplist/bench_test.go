@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/neko233-com/go-data-struct-lib/skiplist"
+	"github.com/neko233-com/struct233-go/skiplist"
 )
 
 const benchSize = 1 << 14

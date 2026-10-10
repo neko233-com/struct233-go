@@ -3,7 +3,7 @@ package bitset_test
 import (
 	"testing"
 
-	"github.com/neko233-com/go-data-struct-lib/bitset"
+	"github.com/neko233-com/struct233-go/bitset"
 )
 
 func benchBitSet(n int) *bitset.BitSet {
