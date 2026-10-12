@@ -1,8 +1,11 @@
 package struct233_test
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	struct233 "github.com/neko233-com/struct233-go"
@@ -163,6 +166,22 @@ func ExampleNewConcurrentQueue() {
 	// 1 1
 }
 
+func ExampleNewConcurrentPriorityQueue() {
+	tasks := struct233.NewConcurrentPriorityQueue(func(a, b string) int {
+		return len(a) - len(b) // shortest task first
+	})
+	tasks.Put("cccc")
+	tasks.Put("bb")
+	tasks.Put("aaa")
+
+	for tasks.Len() > 0 {
+		v, _ := tasks.Take()
+		fmt.Print(v, " ")
+	}
+	// Output:
+	// bb aaa cccc
+}
+
 func ExampleNewTTLCache() {
 	cache := struct233.NewTTLCache[string, int](128, time.Minute)
 	cache.Put("session", 7)
@@ -199,4 +218,197 @@ func ExampleNewBloomFilter() {
 	// true
 	// true
 	// 2 7
+}
+
+func ExampleNewObjectPool() {
+	buffers := struct233.NewObjectPool(func() *strings.Builder { return new(strings.Builder) },
+		struct233.WithObjectPoolReset(func(b *strings.Builder) { b.Reset() }),
+	)
+
+	b := buffers.Get()
+	b.WriteString("hello")
+	buffers.Put(b)
+
+	reused := buffers.Get() // the reset hook already cleaned the object
+	fmt.Printf("%q %d\n", reused.String(), buffers.Stats().Hits)
+	// Output:
+	// "" 1
+}
+
+func ExampleNewUUID7At() {
+	id := struct233.NewUUID7At(time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC))
+	when, _ := id.Time()
+
+	fmt.Println(id.Version(), when.Format(time.RFC3339))
+	fmt.Println(id.String() == struct233.MustParseUUID(id.String()).String())
+	// Output:
+	// 7 2026-01-02T03:04:05Z
+	// true
+}
+
+func ExampleNewSnowflake() {
+	ids := struct233.NewSnowflake(7, struct233.WithSnowflakeNodeBits(4))
+
+	first, _ := ids.Next()
+	second, _ := ids.Next()
+
+	fmt.Println(second > first, ids.NodeOf(first), ids.NodeBits())
+	// Output:
+	// true 7 4
+}
+
+func ExampleNewWorkerPool() {
+	jobs := struct233.NewWorkerPool(2, struct233.WithWorkerPoolQueueSize(4))
+	defer jobs.Close()
+
+	done := make(chan string, 1)
+	_ = jobs.Submit(func() { done <- "job done" })
+	fmt.Println(<-done)
+
+	jobs.Close()
+	fmt.Println(jobs.Closed(), jobs.Metrics().Completed)
+	// Output:
+	// job done
+	// true 1
+}
+
+func ExampleNewRateLimiter() {
+	now := time.Unix(0, 0)
+	limiter := struct233.NewRateLimiter(2, 2, struct233.WithRateLimitClock(func() time.Time { return now }))
+
+	fmt.Println(limiter.Allow(), limiter.Allow(), limiter.Allow())
+	fmt.Println(limiter.AllowN(2))
+
+	now = now.Add(time.Second) // two tokens are refilled
+	fmt.Println(limiter.Tokens(), limiter.AllowN(2))
+	// Output:
+	// true true false
+	// false
+	// 2 true
+}
+
+func ExampleNewSlidingWindowLimiter() {
+	now := time.Unix(0, 0)
+	window := struct233.NewSlidingWindowLimiter(2, time.Minute,
+		struct233.WithRateLimitClock(func() time.Time { return now }))
+
+	fmt.Println(window.Allow(), window.Allow(), window.Allow())
+	fmt.Println(window.Remaining(), window.RetryAfter())
+
+	now = now.Add(time.Minute) // the whole window expires
+	fmt.Println(window.Remaining(), window.Allow())
+	// Output:
+	// true true false
+	// 0 1m0s
+	// 2 true
+}
+
+func ExampleRetry() {
+	attempts := 0
+	err := struct233.Retry(context.Background(), func(context.Context) error {
+		attempts++
+		if attempts < 3 {
+			return errors.New("try again")
+		}
+		return nil
+	},
+		struct233.WithRetryMaxAttempts(5),
+		struct233.WithRetryJitter(0),
+		// inject the sleep so the example does not really wait
+		struct233.WithRetrySleep(func(context.Context, time.Duration) error { return nil }),
+	)
+
+	fmt.Println(err, attempts)
+	// Output:
+	// <nil> 3
+}
+
+func ExampleNewBreaker() {
+	b := struct233.NewBreaker(
+		struct233.WithBreakerFailureThreshold(2),
+		struct233.WithBreakerOpenTimeout(time.Hour),
+	)
+
+	b.Failure()
+	b.Failure()
+	fmt.Println(b.State())
+	fmt.Println(b.Execute(func() error { return nil }))
+	fmt.Println(b.Counts().Rejections)
+	// Output:
+	// open
+	// breaker: circuit is open
+	// 1
+}
+
+func ExampleNewSemaphore() {
+	s := struct233.NewSemaphore(2)
+
+	fmt.Println(s.TryAcquire(), s.TryAcquire(), s.TryAcquire())
+	fmt.Println(s.Permits())
+
+	s.Release(1)
+	fmt.Println(s.Permits())
+	// Output:
+	// true true false
+	// 0
+	// 1
+}
+
+func ExampleNewLatch() {
+	l := struct233.NewLatch(2)
+
+	l.CountDown()
+	fmt.Println(l.Open())
+	l.CountDown()
+	fmt.Println(l.Open(), l.Count())
+	// Output:
+	// false
+	// true 0
+}
+
+func ExampleNewDelayQueue() {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	q := struct233.NewDelayQueueWithClock[string](func() time.Time { return now })
+	q.Put(struct233.NewDelayElement("job", now.Add(time.Minute)))
+
+	_, ok := q.TryTake()
+	fmt.Println(ok)
+
+	now = now.Add(time.Minute) // the clock reaches the deadline
+	item, ok := q.TryTake()
+	fmt.Println(ok, item.Value())
+	// Output:
+	// false
+	// true job
+}
+
+func ExampleNewTimeWheel() {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	w := struct233.NewTimeWheel(10*time.Millisecond, 8,
+		struct233.WithTimeWheelClock(func() time.Time { return now }))
+
+	fired := 0
+	w.Schedule(30*time.Millisecond, func() { fired++ })
+	fmt.Println(w.Len())
+
+	now = now.Add(30 * time.Millisecond)
+	fmt.Println(w.Advance(now), fired)
+	// Output:
+	// 1
+	// 1 1
+}
+
+func ExampleNewWeightedTable() {
+	table := struct233.NewWeightedTable(nil, []string{"common", "rare"},
+		func(item string) float64 {
+			if item == "rare" {
+				return 1 // a third of the picks
+			}
+			return 2
+		})
+
+	picked, ok := table.Pick()
+	fmt.Println(table.Items(), ok, picked != "")
+	// Output:
+	// 2 true true
 }

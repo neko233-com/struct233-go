@@ -53,6 +53,30 @@ func BenchmarkLinkedMapGet(b *testing.B) {
 	}
 }
 
+func BenchmarkLinkedMapGetMiss(b *testing.B) {
+	m := linkedmap.New[int, int]()
+	for i := range 1024 {
+		m.Put(i, i)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		m.Get(2048) // always missing
+	}
+}
+
+func BenchmarkLinkedMapRemove(b *testing.B) {
+	b.ReportAllocs()
+	m := linkedmap.New[int, int]()
+	for i := 0; b.Loop(); i++ {
+		m.Put(i, i)
+		if i%2 == 1 {
+			m.Remove(i - 1)
+		}
+	}
+}
+
 func BenchmarkLinkedMapKeys(b *testing.B) {
 	m := linkedmap.New[int, int]()
 	for i := range 1024 {

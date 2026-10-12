@@ -52,6 +52,36 @@ func BenchmarkBitSetOr(b *testing.B) {
 	}
 }
 
+func BenchmarkBitSetNextSetBit(b *testing.B) {
+	bs := benchBitSet(4096)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; b.Loop(); i++ {
+		bs.NextSetBit(i & 4095)
+	}
+}
+
+func BenchmarkBitSetAnd(b *testing.B) {
+	a := benchBitSet(4096)
+	other := benchBitSet(4096)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		a.And(other)
+	}
+}
+
+func BenchmarkBitSetFlip(b *testing.B) {
+	bs := benchBitSet(4096)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; b.Loop(); i++ {
+		bs.Flip(i & 4095)
+	}
+}
+
 func BenchmarkBitSetToSlice(b *testing.B) {
 	bs := benchBitSet(4096)
 

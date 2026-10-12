@@ -24,6 +24,39 @@ func TestPushPopDoesNotAllocate(t *testing.T) {
 	require.Equal(t, 1, q.Len(), "the queue must be drained back to its warm-up size")
 }
 
+// TestPeekPopDoNotAllocate guards the read paths: Peek and Pop on a
+// non-empty queue must not allocate.
+func TestPeekPopDoNotAllocate(t *testing.T) {
+	q := pqueue.New[int]()
+	for i := range 8 {
+		q.Push(i)
+	}
+
+	allocs := testing.AllocsPerRun(100, func() {
+		q.Peek()
+		q.Pop()
+		q.Push(0)
+	})
+	require.Zero(t, allocs, "Peek/Pop must not allocate")
+	require.Equal(t, 8, q.Len())
+}
+
+// BenchmarkPriorityQueuePeek measures the constant-time top read.
+func BenchmarkPriorityQueuePeek(b *testing.B) {
+	q := pqueue.New[int]()
+	for i := range 1024 {
+		q.Push(i)
+	}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		sink, _ = q.Peek()
+	}
+}
+
+// sink keeps benchmark results alive so the compiler cannot drop the work.
+var sink any
+
 func BenchmarkPriorityQueuePush(b *testing.B) {
 	b.ReportAllocs()
 	q := pqueue.New[int]()
