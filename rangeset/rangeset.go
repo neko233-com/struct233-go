@@ -377,19 +377,14 @@ func (s *RangeSet[T]) Add(r Range[T]) {
 	// or touch r collapses into r's span, the rest is copied over. Because
 	// stored spans are already coalesced and ascending, only a prefix lies
 	// below r and only a suffix above it.
-	i := 0
-	for i < len(s.spans) && gapped(s.spans[i], r) {
-		i++
-	}
+	i := sort.Search(len(s.spans), func(i int) bool { return !gapped(s.spans[i], r) })
 	j := i
 	merged := r
 	for j < len(s.spans) && !gapped(r, s.spans[j]) {
 		merged = merged.Span(s.spans[j]) // both sides are non-empty here
 		j++
 	}
-	tail := slices.Clone(s.spans[j:])
-	s.spans = append(s.spans[:i], merged)
-	s.spans = append(s.spans, tail...)
+	s.spans = slices.Replace(s.spans, i, j, merged)
 }
 
 // Remove removes every value of r. Empty ranges and values not in the set are
@@ -401,17 +396,17 @@ func (s *RangeSet[T]) Remove(r Range[T]) {
 	}
 	out := make([]Range[T], 0, len(s.spans)+1)
 	for _, sp := range s.spans {
-		out = append(out, subtract(sp, r)...)
+		out = appendSubtract(out, sp, r)
 	}
 	s.spans = out
 }
 
-// subtract returns the parts of a that lie outside b.
-func subtract[T cmp.Ordered](a, b Range[T]) []Range[T] {
+// appendSubtract appends the parts of a that lie outside b without allocating
+// a temporary slice for each stored span.
+func appendSubtract[T cmp.Ordered](out []Range[T], a, b Range[T]) []Range[T] {
 	if _, ok := a.Intersection(b); !ok {
-		return []Range[T]{a}
+		return append(out, a)
 	}
-	var out []Range[T]
 	if b.lo.set {
 		// left part: a up to the far side of b's lower end
 		left := Range[T]{lo: a.lo, hi: flip(b.lo)}
@@ -467,11 +462,15 @@ func (s *RangeSet[T]) EnclosesAll(other *RangeSet[T]) bool {
 // Intersects reports whether s and other share at least one value. Spans that
 // only touch do not count, since they share no value.
 func (s *RangeSet[T]) Intersects(other *RangeSet[T]) bool {
-	for _, a := range s.spans {
-		for _, b := range other.spans {
-			if _, ok := a.Intersection(b); ok {
-				return true
-			}
+	for i, j := 0, 0; i < len(s.spans) && j < len(other.spans); {
+		a, b := s.spans[i], other.spans[j]
+		if _, ok := a.Intersection(b); ok {
+			return true
+		}
+		if compareUpper(a.hi, b.hi) <= 0 {
+			i++
+		} else {
+			j++
 		}
 	}
 	return false
@@ -481,11 +480,17 @@ func (s *RangeSet[T]) Intersects(other *RangeSet[T]) bool {
 // modified.
 func (s *RangeSet[T]) Intersection(other *RangeSet[T]) *RangeSet[T] {
 	out := NewSet[T]()
-	for _, a := range s.spans {
-		for _, b := range other.spans {
-			if x, ok := a.Intersection(b); ok {
-				out.Add(x)
-			}
+	for i, j := 0, 0; i < len(s.spans) && j < len(other.spans); {
+		a, b := s.spans[i], other.spans[j]
+		if x, ok := a.Intersection(b); ok {
+			out.spans = append(out.spans, x)
+		}
+		c := compareUpper(a.hi, b.hi)
+		if c <= 0 {
+			i++
+		}
+		if c >= 0 {
+			j++
 		}
 	}
 	return out
@@ -494,11 +499,20 @@ func (s *RangeSet[T]) Intersection(other *RangeSet[T]) *RangeSet[T] {
 // Union returns the values present in s or other. Neither set is modified.
 func (s *RangeSet[T]) Union(other *RangeSet[T]) *RangeSet[T] {
 	out := NewSet[T]()
-	for _, sp := range s.spans {
-		out.Add(sp)
-	}
-	for _, sp := range other.spans {
-		out.Add(sp)
+	for i, j := 0, 0; i < len(s.spans) || j < len(other.spans); {
+		var next Range[T]
+		if j == len(other.spans) || (i < len(s.spans) && s.spans[i].coversLower(other.spans[j])) {
+			next = s.spans[i]
+			i++
+		} else {
+			next = other.spans[j]
+			j++
+		}
+		if n := len(out.spans); n > 0 && !gapped(out.spans[n-1], next) {
+			out.spans[n-1] = out.spans[n-1].Span(next)
+		} else {
+			out.spans = append(out.spans, next)
+		}
 	}
 	return out
 }
@@ -526,14 +540,14 @@ func (s *RangeSet[T]) Complement() *RangeSet[T] {
 	lower := bound[T]{} // the first gap starts at -inf
 	for _, sp := range s.spans {
 		if sp.lo.set {
-			out.Add(Range[T]{lo: lower, hi: flip(sp.lo)})
+			out.spans = append(out.spans, Range[T]{lo: lower, hi: flip(sp.lo)})
 		}
 		if !sp.hi.set {
 			return out // s reaches +inf, nothing lies above it
 		}
 		lower = flip(sp.hi)
 	}
-	out.Add(Range[T]{lo: lower}) // trailing gap up to +inf
+	out.spans = append(out.spans, Range[T]{lo: lower}) // trailing gap up to +inf
 	return out
 }
 
@@ -549,7 +563,33 @@ func (s *RangeSet[T]) Len() int { return len(s.spans) }
 func (s *RangeSet[T]) IsEmpty() bool { return len(s.spans) == 0 }
 
 // Clear removes every value while keeping the allocated span slice.
-func (s *RangeSet[T]) Clear() { s.spans = s.spans[:0] }
+func (s *RangeSet[T]) Clear() {
+	clear(s.spans)
+	s.spans = s.spans[:0]
+}
+
+// compareUpper orders upper bounds, including open/closed and unbounded ends.
+func compareUpper[T cmp.Ordered](a, b bound[T]) int {
+	if !a.set {
+		if !b.set {
+			return 0
+		}
+		return 1
+	}
+	if !b.set {
+		return -1
+	}
+	if c := cmp.Compare(a.val, b.val); c != 0 {
+		return c
+	}
+	if a.closed == b.closed {
+		return 0
+	}
+	if a.closed {
+		return 1
+	}
+	return -1
+}
 
 // All iterates over the stored ranges in ascending order.
 func (s *RangeSet[T]) All() iter.Seq[Range[T]] {

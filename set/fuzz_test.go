@@ -96,15 +96,15 @@ func FuzzLinkedHashSetAgainstMapAndOrder(f *testing.F) {
 	})
 }
 
-// FuzzTreeSetAgainstSortedSlice drives Add/Remove from arbitrary bytes and
+// FuzzSkipListSetAgainstSortedSlice drives Add/Remove from arbitrary bytes and
 // checks the sorted order and membership against a sorted-dedup slice model.
-func FuzzTreeSetAgainstSortedSlice(f *testing.F) {
+func FuzzSkipListSetAgainstSortedSlice(f *testing.F) {
 	f.Add([]byte{})
 	f.Add([]byte{0, 1, 2, 3, 4, 5})
 	f.Add([]byte{0x08, 0x09, 0x02, 0x03})
 
 	f.Fuzz(func(t *testing.T, ops []byte) {
-		ts := set.NewTreeSet[int]()
+		ts := set.NewSkipListSet[int]()
 		model := make([]int, 0, 16) // sorted, no duplicates
 
 		for _, raw := range ops {

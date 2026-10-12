@@ -22,17 +22,24 @@ type BloomFilter struct {
 
 // New creates a filter sized for expectedItems elements with the given
 // false-positive rate (0 < rate < 1). It panics on a non-positive item count
-// or a rate outside (0, 1).
+// or a non-finite rate outside (0, 1), and when the required bit count cannot
+// be represented by the platform's int indexes. Storage grows lazily on Add.
 func New(expectedItems int, falsePositiveRate float64) *BloomFilter {
 	if expectedItems <= 0 {
 		panic("bloomfilter: expectedItems must be positive")
 	}
-	if falsePositiveRate <= 0 || falsePositiveRate >= 1 {
+	if !(falsePositiveRate > 0 && falsePositiveRate < 1) {
 		panic("bloomfilter: falsePositiveRate must be within (0, 1)")
 	}
 	// m = -n*ln(p) / (ln2)^2, k = m/n * ln2
 	ln2 := math.Ln2
-	m := uint64(math.Ceil(-float64(expectedItems) * math.Log(falsePositiveRate) / (ln2 * ln2)))
+	bits := math.Ceil(-float64(expectedItems) * math.Log(falsePositiveRate) / (ln2 * ln2))
+	// Check before conversion: float-to-integer overflow is not portable, and
+	// BitSet indexes (including its length) must fit in an int.
+	if bits >= float64(math.MaxInt) {
+		panic("bloomfilter: required bit count is too large")
+	}
+	m := uint64(bits)
 	if m < 64 {
 		m = 64
 	}
@@ -66,7 +73,7 @@ func (b *BloomFilter) FalsePositiveRate() float64 {
 		return 0
 	}
 	// (1 - e^(-k*n/m))^k
-	return math.Pow(1-math.Exp(-float64(b.k)*float64(b.count)/float64(b.m)), float64(b.k))
+	return math.Pow(-math.Expm1(-float64(b.k)*float64(b.count)/float64(b.m)), float64(b.k))
 }
 
 // Clear resets the filter to empty.

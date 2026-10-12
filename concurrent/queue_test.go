@@ -11,7 +11,7 @@ import (
 )
 
 func TestQueueFIFO(t *testing.T) {
-	q := concurrent.NewQueue[int](3)
+	q := concurrent.NewArrayBlockingQueue[int](3)
 	require.Equal(t, 3, q.Cap())
 	require.Zero(t, q.Len())
 
@@ -30,7 +30,7 @@ func TestQueueFIFO(t *testing.T) {
 }
 
 func TestQueueTryTakeAndPoll(t *testing.T) {
-	q := concurrent.NewQueue[string](2)
+	q := concurrent.NewArrayBlockingQueue[string](2)
 
 	_, ok := q.TryTake()
 	require.False(t, ok, "TryTake on empty queue must miss")
@@ -50,7 +50,7 @@ func TestQueueTryTakeAndPoll(t *testing.T) {
 }
 
 func TestQueueTakeBlocksUntilPut(t *testing.T) {
-	q := concurrent.NewQueue[int](1)
+	q := concurrent.NewArrayBlockingQueue[int](1)
 
 	done := make(chan int, 1)
 	go func() {
@@ -74,7 +74,7 @@ func TestQueueTakeBlocksUntilPut(t *testing.T) {
 }
 
 func TestQueueOfferWaitsForSpace(t *testing.T) {
-	q := concurrent.NewQueue[int](1)
+	q := concurrent.NewArrayBlockingQueue[int](1)
 	require.True(t, q.TryPut(1))
 
 	require.False(t, q.Offer(2, 0), "Offer without timeout must fail on a full queue")
@@ -101,7 +101,7 @@ func TestQueueOfferWaitsForSpace(t *testing.T) {
 }
 
 func TestQueueCloseUnblocksEmptyTake(t *testing.T) {
-	q := concurrent.NewQueue[int](1)
+	q := concurrent.NewArrayBlockingQueue[int](1)
 
 	takeDone := make(chan bool, 1)
 	go func() {
@@ -122,7 +122,7 @@ func TestQueueCloseUnblocksEmptyTake(t *testing.T) {
 }
 
 func TestQueueCloseUnblocksFullPut(t *testing.T) {
-	q := concurrent.NewQueue[int](1)
+	q := concurrent.NewArrayBlockingQueue[int](1)
 	require.True(t, q.TryPut(1))
 	require.False(t, q.TryPut(2), "queue is full")
 
@@ -144,7 +144,7 @@ func TestQueueCloseUnblocksFullPut(t *testing.T) {
 }
 
 func TestQueueDrainAfterClose(t *testing.T) {
-	q := concurrent.NewQueue[int](3)
+	q := concurrent.NewArrayBlockingQueue[int](3)
 	require.True(t, q.TryPut(1))
 	require.True(t, q.TryPut(2))
 
@@ -166,7 +166,7 @@ func TestQueueDrainAfterClose(t *testing.T) {
 }
 
 func TestQueueAll(t *testing.T) {
-	q := concurrent.NewQueue[int](3)
+	q := concurrent.NewArrayBlockingQueue[int](3)
 	q.Put(1)
 	q.Put(2)
 	q.Put(3)
@@ -184,7 +184,7 @@ func TestQueueConcurrentProducersAndConsumers(t *testing.T) {
 		consumers = 4
 		perWorker = 250
 	)
-	q := concurrent.NewQueue[int](32)
+	q := concurrent.NewArrayBlockingQueue[int](32)
 
 	var (
 		wg       sync.WaitGroup
@@ -229,12 +229,12 @@ func TestQueueConcurrentProducersAndConsumers(t *testing.T) {
 }
 
 func TestQueuePanicsOnBadCapacity(t *testing.T) {
-	require.Panics(t, func() { concurrent.NewQueue[int](0) })
-	require.Panics(t, func() { concurrent.NewQueue[int](-1) })
+	require.Panics(t, func() { concurrent.NewArrayBlockingQueue[int](0) })
+	require.Panics(t, func() { concurrent.NewArrayBlockingQueue[int](-1) })
 }
 
 func BenchmarkQueuePutTake(b *testing.B) {
-	q := concurrent.NewQueue[int](1024)
+	q := concurrent.NewArrayBlockingQueue[int](1024)
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -245,7 +245,7 @@ func BenchmarkQueuePutTake(b *testing.B) {
 }
 
 func BenchmarkQueueTryPutTryTake(b *testing.B) {
-	q := concurrent.NewQueue[int](1024)
+	q := concurrent.NewArrayBlockingQueue[int](1024)
 
 	b.ReportAllocs()
 	b.ResetTimer()

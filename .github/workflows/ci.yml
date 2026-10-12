@@ -12,14 +12,19 @@ permissions:
 
 jobs:
   test:
-    name: fmt / vet / test / bench
+    name: Go ${{ matrix.go }} / fmt / vet / race / bench
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ["1.24.x", "stable"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
-          go-version: "1.24"
+          go-version: ${{ matrix.go }}
           cache: true
 
       - name: gofmt

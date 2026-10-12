@@ -7,7 +7,7 @@ import (
 )
 
 func BenchmarkConcurrentSetAdd(b *testing.B) {
-	s := concurrent.NewSetWithCapacity[int](1 << 16)
+	s := concurrent.NewHashSetWithCapacity[int](1 << 16)
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -21,7 +21,7 @@ func BenchmarkConcurrentSetAdd(b *testing.B) {
 }
 
 func BenchmarkConcurrentSetContains(b *testing.B) {
-	s := concurrent.NewSetWithCapacity[int](1 << 12)
+	s := concurrent.NewHashSetWithCapacity[int](1 << 12)
 	for i := range 1 << 12 {
 		s.Add(i)
 	}
@@ -38,7 +38,7 @@ func BenchmarkConcurrentSetContains(b *testing.B) {
 }
 
 func BenchmarkConcurrentMapGet(b *testing.B) {
-	m := concurrent.NewMapWithCapacity[int, int](1 << 12)
+	m := concurrent.NewHashMapWithCapacity[int, int](1 << 12)
 	for i := range 1 << 12 {
 		m.Put(i, i)
 	}
@@ -55,7 +55,7 @@ func BenchmarkConcurrentMapGet(b *testing.B) {
 }
 
 func BenchmarkConcurrentSkipListGet(b *testing.B) {
-	sl := concurrent.NewSkipList[int, int]()
+	sl := concurrent.NewSkipListMap[int, int]()
 	for i := range 1 << 12 {
 		sl.Put(i, i)
 	}

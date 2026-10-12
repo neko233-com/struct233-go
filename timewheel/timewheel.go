@@ -19,10 +19,13 @@
 // deadline. Timers scheduled with a non-positive delay fire on the very next
 // Advance, even when no time has passed. Callbacks run outside the wheel lock,
 // so a callback may schedule or cancel timers safely.
+// Times and their rounded tick boundaries must fit in an int64 Unix-nanosecond
+// timestamp (approximately years 1678 through 2262); out-of-range inputs panic.
 package timewheel
 
 import (
 	"context"
+	"math"
 	"sort"
 	"sync"
 	"time"
@@ -36,9 +39,11 @@ type Timer struct {
 	w         *Wheel
 	deadline  time.Time
 	fn        func()
-	seq       uint64 // insertion order, breaks deadline ties (FIFO)
-	fired     bool   // guarded by w.mu
-	cancelled bool   // guarded by w.mu
+	seq       uint64    // insertion order, breaks deadline ties (FIFO)
+	bucket    *[]*Timer // containing bucket, guarded by w.mu
+	index     int       // position in bucket, guarded by w.mu
+	fired     bool      // guarded by w.mu
+	cancelled bool      // guarded by w.mu
 }
 
 // Cancel cancels the timer, reporting whether it was still pending. It reports
@@ -51,6 +56,8 @@ func (t *Timer) Cancel() bool {
 		return false
 	}
 	t.cancelled = true
+	t.fn = nil // release captured objects even if its bucket is far in the future
+	w.removeLocked(t)
 	w.pending--
 	return true
 }
@@ -127,6 +134,13 @@ func New(tick time.Duration, wheelSize int, opts ...Option) *Wheel {
 	if w.now == nil {
 		panic("timewheel: nil clock")
 	}
+	unit := int64(1)
+	for level := 1; level < w.levels; level++ {
+		if unit > math.MaxInt64/int64(w.wheelSize) {
+			panic("timewheel: hierarchy span overflows int64 ticks")
+		}
+		unit *= int64(w.wheelSize)
+	}
 
 	w.buckets = make([][][]*Timer, w.levels)
 	for level := range w.buckets {
@@ -164,10 +178,13 @@ func (w *Wheel) ScheduleAt(deadline time.Time, fn func()) *Timer {
 // scheduled with a non-positive delay are still fired. A panicking callback
 // propagates to the caller and skips the remaining callbacks of that Advance.
 func (w *Wheel) Advance(now time.Time) int {
+	return w.fire(w.advanceTo(now))
+}
+
+func (w *Wheel) advanceTo(now time.Time) []*Timer {
 	w.mu.Lock()
-	due := w.advanceLocked(now)
-	w.mu.Unlock()
-	return w.fire(due)
+	defer w.mu.Unlock()
+	return w.advanceLocked(now)
 }
 
 // AdvanceBy advances by d from the time of the previous Advance (not from the
@@ -177,19 +194,19 @@ func (w *Wheel) AdvanceBy(d time.Duration) int {
 	if d < 0 {
 		panic("timewheel: advance duration must not be negative")
 	}
+	return w.fire(w.advanceBy(d))
+}
+
+func (w *Wheel) advanceBy(d time.Duration) []*Timer {
 	w.mu.Lock()
-	due := w.advanceLocked(w.lastTime.Add(d))
-	w.mu.Unlock()
-	return w.fire(due)
+	defer w.mu.Unlock()
+	return w.advanceLocked(w.lastTime.Add(d))
 }
 
 // Tick advances by one tick from the time of the previous Advance and returns
 // how many callbacks ran.
 func (w *Wheel) Tick() int {
-	w.mu.Lock()
-	due := w.advanceLocked(w.lastTime.Add(w.tick))
-	w.mu.Unlock()
-	return w.fire(due)
+	return w.fire(w.advanceBy(w.tick))
 }
 
 // Len returns how many timers are still pending: fired and cancelled timers are
@@ -209,12 +226,16 @@ func (w *Wheel) Stop() {
 		for slot := range w.buckets[level] {
 			for _, timer := range w.buckets[level][slot] {
 				timer.cancelled = true
+				timer.fn = nil
+				timer.bucket = nil
 			}
 			w.buckets[level][slot] = nil
 		}
 	}
 	for _, timer := range w.immediate {
 		timer.cancelled = true
+		timer.fn = nil
+		timer.bucket = nil
 	}
 	w.immediate = nil
 	w.pending = 0
@@ -237,6 +258,14 @@ func (w *Wheel) Run(ctx context.Context) {
 
 // add registers fn for deadline, using now as the reference point.
 func (w *Wheel) add(deadline time.Time, fn func(), now time.Time) *Timer {
+	w.tickOf(now)
+	deadlineTick := w.tickOf(deadline)
+	if deadline.UnixNano()%int64(w.tick) != 0 {
+		deadlineTick++
+	}
+	if deadlineTick > math.MaxInt64/int64(w.tick) {
+		panic("timewheel: rounded deadline is outside the UnixNano range")
+	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -260,24 +289,53 @@ func (w *Wheel) add(deadline time.Time, fn func(), now time.Time) *Timer {
 func (w *Wheel) insertLocked(timer *Timer, ref time.Time) {
 	d := timer.deadline.Sub(ref)
 	if d <= 0 {
-		w.immediate = append(w.immediate, timer)
+		w.appendLocked(timer, &w.immediate)
 		return
 	}
 
 	// the fire tick is the first tick boundary at or after the deadline
-	ticks := int64((d + w.tick - 1) / w.tick)
+	ticks := int64(d / w.tick)
+	if d%w.tick != 0 {
+		ticks++
+	}
 	level := 0
 	for level+1 < w.levels && ticks >= w.unitTicks(level+1) {
 		level++
 	}
-	slot := int((w.tickOf(ref) + ticks) / w.unitTicks(level) % int64(w.wheelSize))
-	w.buckets[level][slot] = append(w.buckets[level][slot], timer)
+	fireTick := w.tickOf(timer.deadline)
+	if timer.deadline.UnixNano()%int64(w.tick) != 0 {
+		fireTick++
+	}
+	slot := w.slotOf(floorDiv(fireTick, w.unitTicks(level)))
+	w.appendLocked(timer, &w.buckets[level][slot])
+}
+
+func (w *Wheel) appendLocked(timer *Timer, bucket *[]*Timer) {
+	timer.bucket, timer.index = bucket, len(*bucket)
+	*bucket = append(*bucket, timer)
+}
+
+// removeLocked unlinks a pending timer in O(1); sorting due timers preserves
+// deadline/FIFO ordering independently of their order inside each bucket.
+func (w *Wheel) removeLocked(timer *Timer) {
+	bucket := timer.bucket
+	if bucket == nil {
+		return
+	}
+	last := len(*bucket) - 1
+	moved := (*bucket)[last]
+	(*bucket)[timer.index] = moved
+	moved.index = timer.index
+	(*bucket)[last] = nil
+	*bucket = (*bucket)[:last]
+	timer.bucket = nil
 }
 
 // advanceLocked moves the wheel to now and returns the timers that came due in
 // deadline order. The caller must hold the mutex, and must run the callbacks
 // after releasing it.
 func (w *Wheel) advanceLocked(now time.Time) []*Timer {
+	target := w.tickOf(now) // reject before changing any pending timer state
 	if now.Before(w.lastTime) {
 		return nil // time did not move forward
 	}
@@ -291,9 +349,9 @@ func (w *Wheel) advanceLocked(now time.Time) []*Timer {
 	}
 	w.immediate = nil
 
-	target := w.tickOf(now)
 	if w.pending > 0 {
-		for tick := w.lastTick + 1; tick <= target; tick++ {
+		for tick := w.lastTick; tick < target; {
+			tick++
 			w.processTickLocked(tick, &due)
 		}
 	}
@@ -321,7 +379,7 @@ func (w *Wheel) processTickLocked(tick int64, due *[]*Timer) {
 		if tick%unit != 0 {
 			continue
 		}
-		slot := int(tick / unit % int64(w.wheelSize))
+		slot := w.slotOf(floorDiv(tick, unit))
 		bucket := w.buckets[level][slot]
 		w.buckets[level][slot] = nil
 		for _, timer := range bucket {
@@ -337,7 +395,7 @@ func (w *Wheel) processTickLocked(tick int64, due *[]*Timer) {
 	}
 
 	// level 0 fires: its bucket is one tick wide
-	slot := int(tick % int64(w.wheelSize))
+	slot := w.slotOf(tick)
 	bucket := w.buckets[0][slot]
 	w.buckets[0][slot] = nil
 	for _, timer := range bucket {
@@ -350,24 +408,41 @@ func (w *Wheel) processTickLocked(tick int64, due *[]*Timer) {
 		}
 		// the deadline is inside the next tick: hold the timer one tick longer
 		// instead of firing it early
-		next := int((tick + 1) % int64(w.wheelSize))
-		w.buckets[0][next] = append(w.buckets[0][next], timer)
+		next := w.slotOf(tick + 1)
+		w.appendLocked(timer, &w.buckets[0][next])
 	}
 }
 
 // expireLocked marks a timer as fired and appends it to due.
 func (w *Wheel) expireLocked(timer *Timer, due *[]*Timer) {
 	timer.fired = true
+	timer.bucket = nil
 	w.pending--
 	*due = append(*due, timer)
 }
 
 // fire runs the callbacks outside the wheel lock and reports how many ran.
 func (w *Wheel) fire(due []*Timer) int {
+	defer func() {
+		// Fired handles must not retain callbacks, including callbacks skipped
+		// after a panic. Cancel and Stop never mutate already-fired callbacks.
+		for _, timer := range due {
+			timer.fn = nil
+		}
+	}()
 	for _, timer := range due {
 		timer.fn()
 	}
 	return len(due)
+}
+
+// slotOf keeps pre-epoch tick indexes inside the bucket array.
+func (w *Wheel) slotOf(tick int64) int {
+	slot := tick % int64(w.wheelSize)
+	if slot < 0 {
+		slot += int64(w.wheelSize)
+	}
+	return int(slot)
 }
 
 // unitTicks returns how many ticks one bucket of the given level spans.
@@ -381,7 +456,15 @@ func (w *Wheel) unitTicks(level int) int64 {
 
 // tickOf returns the tick index of t.
 func (w *Wheel) tickOf(t time.Time) int64 {
-	return floorDiv(t.UnixNano(), int64(w.tick))
+	ns := t.UnixNano()
+	if !time.Unix(0, ns).Equal(t) {
+		panic("timewheel: time is outside the UnixNano range")
+	}
+	index := floorDiv(ns, int64(w.tick))
+	if index < math.MinInt64/int64(w.tick) {
+		panic("timewheel: tick boundary is outside the UnixNano range")
+	}
+	return index
 }
 
 // tickTime returns the time a tick index starts at.

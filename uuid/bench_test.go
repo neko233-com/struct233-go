@@ -1,6 +1,7 @@
 package uuid_test
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/neko233-com/struct233-go/uuid"
@@ -26,9 +27,11 @@ func BenchmarkNewV7(b *testing.B) {
 func BenchmarkNewV7Parallel(b *testing.B) {
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
+		var id uuid.UUID
 		for pb.Next() {
-			sink = uuid.NewV7()
+			id = uuid.NewV7()
 		}
+		runtime.KeepAlive(id)
 	})
 }
 

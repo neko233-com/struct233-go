@@ -3,9 +3,9 @@
 //
 //	import "github.com/neko233-com/struct233-go"
 //
-//	s := struct233.NewSet(1, 2, 3)
-//	q := struct233.NewPriorityQueue[int]()
-//	c := struct233.NewConcurrentSkipList[string, int]()
+//	s := struct233.NewHashSet(1, 2, 3)
+//	q := struct233.NewHeapPriorityQueue[int]()
+//	c := struct233.NewConcurrentSkipListMap[string, int]()
 //
 // The types below are aliases of the implementations in the subpackages
 // (set, skiplist, pqueue, deque, bitset, lru, ttlcache, linkedmap, ringbuffer,
@@ -58,23 +58,25 @@ type Comparator[K any] = skiplist.Comparator[K]
 
 // Container aliases, mirroring the JDK collection names.
 type (
-	// Set is an unordered hash set (java.util.HashSet).
-	Set[T comparable] = set.HashSet[T]
-	// SortedSet is a skip-list backed sorted set (java.util.TreeSet).
-	SortedSet[T any] = set.TreeSet[T]
-	// LinkedSet keeps insertion order (java.util.LinkedHashSet).
-	LinkedSet[T comparable] = set.LinkedHashSet[T]
-	// SkipList is an ordered map with NavigableMap operations
+	// Set is the common collection contract implemented by each set style.
+	Set[T any] = set.Set[T]
+	// NavigableSet adds ordered boundary and range queries to Set.
+	NavigableSet[T any] = set.NavigableSet[T]
+	// HashSet is an unordered hash set (java.util.HashSet).
+	HashSet[T comparable] = set.HashSet[T]
+	// SkipListSet is a skip-list backed sorted set (java.util.TreeSet).
+	SkipListSet[T any] = set.SkipListSet[T]
+	// LinkedHashSet keeps insertion order (java.util.LinkedHashSet).
+	LinkedHashSet[T comparable] = set.LinkedHashSet[T]
+	// SkipListMap is an ordered map with NavigableMap operations
 	// (java.util.concurrent.ConcurrentSkipListMap, single-threaded variant).
-	SkipList[K any, V any] = skiplist.SkipList[K, V]
-	// TreeMap is the JDK name for the same ordered map as SkipList.
-	TreeMap[K any, V any] = skiplist.SkipList[K, V]
-	// LinkedMap preserves insertion order (java.util.LinkedHashMap).
-	LinkedMap[K comparable, V any] = linkedmap.Map[K, V]
-	// PriorityQueue is a binary-heap priority queue (java.util.PriorityQueue).
-	PriorityQueue[T any] = pqueue.PriorityQueue[T]
-	// Deque is a circular-array double-ended queue (java.util.ArrayDeque).
-	Deque[T any] = deque.ArrayDeque[T]
+	SkipListMap[K any, V any] = skiplist.SkipListMap[K, V]
+	// LinkedHashMap preserves insertion order (java.util.LinkedHashMap).
+	LinkedHashMap[K comparable, V any] = linkedmap.LinkedHashMap[K, V]
+	// HeapPriorityQueue is a binary-heap priority queue (java.util.PriorityQueue).
+	HeapPriorityQueue[T any] = pqueue.HeapPriorityQueue[T]
+	// ArrayDeque is a circular-array double-ended queue (java.util.ArrayDeque).
+	ArrayDeque[T any] = deque.ArrayDeque[T]
 	// RingBuffer keeps the newest N elements, overwriting the oldest.
 	RingBuffer[T any] = ringbuffer.RingBuffer[T]
 	// BitSet is a growable bit vector (java.util.BitSet).
@@ -88,23 +90,23 @@ type (
 	// BloomFilter is a probabilistic set with no false negatives.
 	BloomFilter = bloomfilter.BloomFilter
 
-	// ConcurrentSet is a goroutine-safe unordered set.
-	ConcurrentSet[T comparable] = concurrent.Set[T]
-	// ConcurrentMap is a goroutine-safe map with an atomic GetOrPut.
-	ConcurrentMap[K comparable, V any] = concurrent.Map[K, V]
-	// ConcurrentSkipList is a goroutine-safe ordered map
+	// ConcurrentHashSet is a goroutine-safe unordered set.
+	ConcurrentHashSet[T comparable] = concurrent.HashSet[T]
+	// ConcurrentHashMap is a goroutine-safe map with an atomic GetOrPut.
+	ConcurrentHashMap[K comparable, V any] = concurrent.HashMap[K, V]
+	// ConcurrentSkipListMap is a goroutine-safe ordered map
 	// (java.util.concurrent.ConcurrentSkipListMap).
-	ConcurrentSkipList[K any, V any] = concurrent.SkipList[K, V]
+	ConcurrentSkipListMap[K any, V any] = concurrent.SkipListMap[K, V]
 	// ConcurrentLRU is a goroutine-safe LRU cache.
 	ConcurrentLRU[K comparable, V any] = concurrent.LRU[K, V]
-	// ConcurrentQueue is a bounded blocking FIFO queue
+	// ArrayBlockingQueue is a bounded blocking FIFO queue
 	// (java.util.concurrent.ArrayBlockingQueue).
-	ConcurrentQueue[T any] = concurrent.Queue[T]
-	// ConcurrentPriorityQueue is a blocking priority queue whose head is
+	ArrayBlockingQueue[T any] = concurrent.ArrayBlockingQueue[T]
+	// HeapBlockingPriorityQueue is a blocking priority queue whose head is
 	// always the smallest element per the comparator
-	// (java.util.concurrent.PriorityBlockingQueue). The plain PriorityQueue
+	// (java.util.concurrent.PriorityBlockingQueue). The plain HeapPriorityQueue
 	// is single-threaded; this one is safe for cross-goroutine use.
-	ConcurrentPriorityQueue[T any] = concurrent.PriorityQueue[T]
+	HeapBlockingPriorityQueue[T any] = concurrent.HeapBlockingPriorityQueue[T]
 )
 
 // Utility aliases: the everyday primitives that these containers are usually
@@ -130,8 +132,8 @@ type (
 	WorkerPoolTask = workerpool.Task
 	// WorkerPoolMetrics is a snapshot of a WorkerPool's counters.
 	WorkerPoolMetrics = workerpool.Metrics
-	// RateLimiter is a goroutine-safe token-bucket limiter.
-	RateLimiter = ratelimit.Limiter
+	// TokenBucketLimiter is a goroutine-safe token-bucket limiter.
+	TokenBucketLimiter = ratelimit.Limiter
 	// SlidingWindowLimiter admits at most Limit events in any Window.
 	SlidingWindowLimiter = ratelimit.SlidingWindow
 	// DelayQueue is an unbounded blocking queue whose elements become
@@ -189,7 +191,7 @@ type (
 	SnowflakeOption = snowflake.Option
 	// WorkerPoolOption configures a WorkerPool.
 	WorkerPoolOption = workerpool.Option
-	// RateLimitOption configures a RateLimiter.
+	// RateLimitOption configures a TokenBucketLimiter.
 	RateLimitOption = ratelimit.Option
 	// RetryOption configures a RetryPolicy.
 	RetryOption = retry.Option
@@ -262,7 +264,7 @@ func WithWorkerPoolPanicHandler(fn func(recovered any)) WorkerPoolOption {
 	return workerpool.WithPanicHandler(fn)
 }
 
-// WithRateLimitClock sets the time source a RateLimiter refills from.
+// WithRateLimitClock sets the time source a TokenBucketLimiter refills from.
 func WithRateLimitClock(now func() time.Time) RateLimitOption {
 	return ratelimit.WithClock(now)
 }
@@ -348,76 +350,71 @@ func WithTimeWheelLevels(levels int) TimeWheelOption {
 	return timewheel.WithLevels(levels)
 }
 
-// NewSet creates an unordered hash set, optionally pre-filled.
-func NewSet[T comparable](items ...T) *Set[T] {
+// NewHashSet creates an unordered hash set, optionally pre-filled.
+func NewHashSet[T comparable](items ...T) *HashSet[T] {
 	return set.NewHashSet(items...)
 }
 
-// NewSetWithCapacity creates an unordered hash set whose map is pre-sized
+// NewHashSetWithCapacity creates an unordered hash set whose map is pre-sized
 // for capacity elements, avoiding rehashing while filling it.
-func NewSetWithCapacity[T comparable](capacity int, items ...T) *Set[T] {
+func NewHashSetWithCapacity[T comparable](capacity int, items ...T) *HashSet[T] {
 	return set.NewHashSetWithCapacity(capacity, items...)
 }
 
-// NewSortedSet creates a sorted set ordered by the natural ordering of T.
-func NewSortedSet[T cmp.Ordered](items ...T) *SortedSet[T] {
-	return set.NewTreeSet(items...)
+// NewSkipListSet creates a sorted set ordered by the natural ordering of T.
+func NewSkipListSet[T cmp.Ordered](items ...T) *SkipListSet[T] {
+	return set.NewSkipListSet(items...)
 }
 
-// NewSortedSetFunc creates a sorted set ordered by a custom comparator.
-func NewSortedSetFunc[T any](compare Comparator[T], items ...T) *SortedSet[T] {
-	return set.NewTreeSetFunc(compare, items...)
+// NewSkipListSetFunc creates a sorted set ordered by a custom comparator.
+func NewSkipListSetFunc[T any](compare Comparator[T], items ...T) *SkipListSet[T] {
+	return set.NewSkipListSetFunc(compare, items...)
 }
 
-// NewLinkedSet creates a set that keeps insertion order.
-func NewLinkedSet[T comparable](items ...T) *LinkedSet[T] {
+// NewLinkedHashSet creates a set that keeps insertion order.
+func NewLinkedHashSet[T comparable](items ...T) *LinkedHashSet[T] {
 	return set.NewLinkedHashSet(items...)
 }
 
-// NewSkipList creates an ordered map ordered by the natural ordering of K.
-func NewSkipList[K cmp.Ordered, V any]() *SkipList[K, V] {
+// NewLinkedHashSetWithCapacity creates an insertion-ordered hash set with a
+// map pre-sized for capacity elements.
+func NewLinkedHashSetWithCapacity[T comparable](capacity int, items ...T) *LinkedHashSet[T] {
+	return set.NewLinkedHashSetWithCapacity(capacity, items...)
+}
+
+// NewSkipListMap creates an ordered map ordered by the natural ordering of K.
+func NewSkipListMap[K cmp.Ordered, V any]() *SkipListMap[K, V] {
 	return skiplist.New[K, V]()
 }
 
-// NewSkipListFunc creates an ordered map ordered by a custom comparator.
-func NewSkipListFunc[K any, V any](compare Comparator[K]) *SkipList[K, V] {
+// NewSkipListMapFunc creates an ordered map ordered by a custom comparator.
+func NewSkipListMapFunc[K any, V any](compare Comparator[K]) *SkipListMap[K, V] {
 	return skiplist.NewFunc[K, V](compare)
 }
 
-// NewTreeMap creates an ordered map ordered by the natural ordering of K
-// (JDK name for NewSkipList).
-func NewTreeMap[K cmp.Ordered, V any]() *TreeMap[K, V] {
-	return skiplist.New[K, V]()
-}
-
-// NewTreeMapFunc creates an ordered map ordered by a custom comparator.
-func NewTreeMapFunc[K any, V any](compare Comparator[K]) *TreeMap[K, V] {
-	return skiplist.NewFunc[K, V](compare)
-}
-
-// NewLinkedMap creates a map that preserves insertion order.
-func NewLinkedMap[K comparable, V any]() *LinkedMap[K, V] {
+// NewLinkedHashMap creates a map that preserves insertion order.
+func NewLinkedHashMap[K comparable, V any]() *LinkedHashMap[K, V] {
 	return linkedmap.New[K, V]()
 }
 
-// NewPriorityQueue creates a min-queue ordered by the natural ordering of T.
-func NewPriorityQueue[T cmp.Ordered]() *PriorityQueue[T] {
+// NewHeapPriorityQueue creates a min-queue ordered by the natural ordering of T.
+func NewHeapPriorityQueue[T cmp.Ordered]() *HeapPriorityQueue[T] {
 	return pqueue.New[T]()
 }
 
-// NewPriorityQueueFunc creates a queue ordered by a custom comparator.
-func NewPriorityQueueFunc[T any](compare func(a, b T) int) *PriorityQueue[T] {
+// NewHeapPriorityQueueFunc creates a queue ordered by a custom comparator.
+func NewHeapPriorityQueueFunc[T any](compare func(a, b T) int) *HeapPriorityQueue[T] {
 	return pqueue.NewFunc(compare)
 }
 
-// NewPriorityQueueFromSlice builds a queue with all items in O(n).
-func NewPriorityQueueFromSlice[T any](items []T, compare func(a, b T) int) *PriorityQueue[T] {
+// NewHeapPriorityQueueFromSlice builds a queue with all items in O(n).
+func NewHeapPriorityQueueFromSlice[T any](items []T, compare func(a, b T) int) *HeapPriorityQueue[T] {
 	return pqueue.NewFromSlice(items, compare)
 }
 
-// NewDeque creates an empty double-ended queue. An optional initial
+// NewArrayDeque creates an empty double-ended queue. An optional initial
 // capacity may be given.
-func NewDeque[T any](initialCapacity ...int) *Deque[T] {
+func NewArrayDeque[T any](initialCapacity ...int) *ArrayDeque[T] {
 	return deque.New[T](initialCapacity...)
 }
 
@@ -437,38 +434,38 @@ func NewLRU[K comparable, V any](capacity int) *LRU[K, V] {
 	return lru.New[K, V](capacity)
 }
 
-// NewConcurrentSet creates a goroutine-safe set, optionally pre-filled.
-func NewConcurrentSet[T comparable](items ...T) *ConcurrentSet[T] {
-	return concurrent.NewSet(items...)
+// NewConcurrentHashSet creates a goroutine-safe set, optionally pre-filled.
+func NewConcurrentHashSet[T comparable](items ...T) *ConcurrentHashSet[T] {
+	return concurrent.NewHashSet(items...)
 }
 
-// NewConcurrentSetWithCapacity creates an empty goroutine-safe set whose map
+// NewConcurrentHashSetWithCapacity creates an empty goroutine-safe set whose map
 // is pre-sized.
-func NewConcurrentSetWithCapacity[T comparable](capacity int) *ConcurrentSet[T] {
-	return concurrent.NewSetWithCapacity[T](capacity)
+func NewConcurrentHashSetWithCapacity[T comparable](capacity int) *ConcurrentHashSet[T] {
+	return concurrent.NewHashSetWithCapacity[T](capacity)
 }
 
-// NewConcurrentMap creates an empty goroutine-safe map.
-func NewConcurrentMap[K comparable, V any]() *ConcurrentMap[K, V] {
-	return concurrent.NewMap[K, V]()
+// NewConcurrentHashMap creates an empty goroutine-safe map.
+func NewConcurrentHashMap[K comparable, V any]() *ConcurrentHashMap[K, V] {
+	return concurrent.NewHashMap[K, V]()
 }
 
-// NewConcurrentMapWithCapacity creates an empty goroutine-safe map pre-sized
+// NewConcurrentHashMapWithCapacity creates an empty goroutine-safe map pre-sized
 // for capacity entries.
-func NewConcurrentMapWithCapacity[K comparable, V any](capacity int) *ConcurrentMap[K, V] {
-	return concurrent.NewMapWithCapacity[K, V](capacity)
+func NewConcurrentHashMapWithCapacity[K comparable, V any](capacity int) *ConcurrentHashMap[K, V] {
+	return concurrent.NewHashMapWithCapacity[K, V](capacity)
 }
 
-// NewConcurrentSkipList creates a goroutine-safe ordered map using the
+// NewConcurrentSkipListMap creates a goroutine-safe ordered map using the
 // natural ordering of K.
-func NewConcurrentSkipList[K cmp.Ordered, V any]() *ConcurrentSkipList[K, V] {
-	return concurrent.NewSkipList[K, V]()
+func NewConcurrentSkipListMap[K cmp.Ordered, V any]() *ConcurrentSkipListMap[K, V] {
+	return concurrent.NewSkipListMap[K, V]()
 }
 
-// NewConcurrentSkipListFunc creates a goroutine-safe ordered map using a
+// NewConcurrentSkipListMapFunc creates a goroutine-safe ordered map using a
 // custom comparator.
-func NewConcurrentSkipListFunc[K any, V any](compare Comparator[K]) *ConcurrentSkipList[K, V] {
-	return concurrent.NewSkipListFunc[K, V](compare)
+func NewConcurrentSkipListMapFunc[K any, V any](compare Comparator[K]) *ConcurrentSkipListMap[K, V] {
+	return concurrent.NewSkipListMapFunc[K, V](compare)
 }
 
 // NewConcurrentLRU creates a goroutine-safe LRU cache with the given
@@ -477,24 +474,24 @@ func NewConcurrentLRU[K comparable, V any](capacity int) *ConcurrentLRU[K, V] {
 	return concurrent.NewLRU[K, V](capacity)
 }
 
-// NewConcurrentQueue creates a bounded blocking FIFO queue holding at most
+// NewArrayBlockingQueue creates a bounded blocking FIFO queue holding at most
 // capacity elements (> 0).
-func NewConcurrentQueue[T any](capacity int) *ConcurrentQueue[T] {
-	return concurrent.NewQueue[T](capacity)
+func NewArrayBlockingQueue[T any](capacity int) *ArrayBlockingQueue[T] {
+	return concurrent.NewArrayBlockingQueue[T](capacity)
 }
 
-// NewConcurrentPriorityQueue creates an unbounded blocking priority queue
+// NewHeapBlockingPriorityQueue creates an unbounded blocking priority queue
 // ordered by compare (negative when a < b, zero when equal, positive
 // otherwise). Equal elements leave the queue in insertion order.
-func NewConcurrentPriorityQueue[T any](compare func(a, b T) int) *ConcurrentPriorityQueue[T] {
-	return concurrent.NewPriorityQueue[T](compare)
+func NewHeapBlockingPriorityQueue[T any](compare func(a, b T) int) *HeapBlockingPriorityQueue[T] {
+	return concurrent.NewHeapBlockingPriorityQueue[T](compare)
 }
 
-// NewConcurrentPriorityQueueCapacity creates a blocking priority queue
+// NewHeapBlockingPriorityQueueWithCapacity creates a blocking priority queue
 // holding at most capacity elements (> 0): Put blocks while the queue is
 // full and Offer waits at most its timeout for space.
-func NewConcurrentPriorityQueueCapacity[T any](compare func(a, b T) int, capacity int) *ConcurrentPriorityQueue[T] {
-	return concurrent.NewPriorityQueueCapacity[T](compare, capacity)
+func NewHeapBlockingPriorityQueueWithCapacity[T any](compare func(a, b T) int, capacity int) *HeapBlockingPriorityQueue[T] {
+	return concurrent.NewHeapBlockingPriorityQueueWithCapacity[T](compare, capacity)
 }
 
 // NewTTLCache creates a goroutine-safe cache with the given capacity (> 0)
@@ -577,9 +574,9 @@ func NewWorkerPool(workers int, opts ...WorkerPoolOption) *WorkerPool {
 	return workerpool.New(workers, opts...)
 }
 
-// NewRateLimiter creates a token-bucket limiter admitting rate events per
+// NewTokenBucketLimiter creates a token-bucket limiter admitting rate events per
 // second in bursts of at most burst.
-func NewRateLimiter(rate float64, burst int, opts ...RateLimitOption) *RateLimiter {
+func NewTokenBucketLimiter(rate float64, burst int, opts ...RateLimitOption) *TokenBucketLimiter {
 	return ratelimit.New(rate, burst, opts...)
 }
 

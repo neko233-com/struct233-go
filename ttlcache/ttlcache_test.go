@@ -75,16 +75,27 @@ func TestExpiry(t *testing.T) {
 	require.Zero(t, c.Len(), "expired entry must be dropped on access")
 }
 
-func TestPeekAndContainsDoNotReviveExpired(t *testing.T) {
-	clock := newFakeClock()
-	c := ttlcache.NewWithClock[string, int](4, time.Second, clock.Now)
-	c.Put("a", 1)
-	clock.Advance(2 * time.Second)
-
-	_, ok := c.Peek("a")
-	require.False(t, ok, "Peek must not return expired values")
-	require.False(t, c.Contains("a"))
-	require.Equal(t, 1, c.Len(), "Peek/Contains must not mutate the map")
+func TestPeekAndContainsReclaimExpired(t *testing.T) {
+	for _, method := range []string{"Peek", "Contains"} {
+		t.Run(method, func(t *testing.T) {
+			clock := newFakeClock()
+			c := ttlcache.NewWithClock[string, int](2, time.Second, clock.Now)
+			c.PutWithTTL("live", 1, time.Hour)
+			c.Put("expired", 2)
+			clock.Advance(time.Second)
+			if method == "Peek" {
+				_, ok := c.Peek("expired")
+				require.False(t, ok)
+			} else {
+				require.False(t, c.Contains("expired"))
+			}
+			require.Equal(t, 1, c.Len(), "access must reclaim the expired entry")
+			require.False(t, c.Remove("expired"))
+			c.Put("new", 3)
+			require.True(t, c.Contains("live"), "reclaimed capacity must avoid evicting a live entry")
+			require.Equal(t, []string{"live", "new"}, c.Keys())
+		})
+	}
 }
 
 func TestPutWithTTLOverrides(t *testing.T) {
@@ -489,14 +500,14 @@ func TestExpiryBoundaryTable(t *testing.T) {
 			query:   1, wantVal: 0, wantOK: false,
 		},
 		{
-			name: "peek keeps the expired entry (documented leak)",
+			name: "peek reclaims the expired entry",
 			ttl:  ttl,
 			steps: []tcStep{
 				{kind: "put", key: 1, val: 10},
 				{kind: "advance", d: 2 * ttl},
 				{kind: "peek", key: 1},
 			},
-			wantLen: 1,
+			wantLen: 0,
 			query:   1, wantVal: 0, wantOK: false,
 		},
 		{
@@ -1140,10 +1151,7 @@ func TestCapacityEdgeTable(t *testing.T) {
 
 // The reference model mirrors the observable ttlcache semantics: a map with an
 // explicit expiry timestamp per entry plus an LRU order slice (least recent
-// first). It deliberately mirrors the current Peek behaviour on expired
-// entries (report absent, keep the entry): the leak is pinned by
-// TestPeekAndContainsDoNotReviveExpired and reported separately, so the model
-// tracks the observable behaviour rather than hiding it.
+// first). Get, Peek and Contains reclaim expired entries lazily.
 
 const (
 	tcCapacity  = 3
@@ -1233,11 +1241,14 @@ func (m *tcModel) get(k int) (int, bool) {
 	return e.val, true
 }
 
-// peek returns the value of k without touching the order and without dropping
-// an expired entry, mirroring the implementation including its leak.
+// peek returns the value of k without touching the order, reclaiming expired entries.
 func (m *tcModel) peek(k int) (int, bool) {
 	e, ok := m.m[k]
-	if !ok || m.expired(e) {
+	if !ok {
+		return 0, false
+	}
+	if m.expired(e) {
+		m.remove(k)
 		return 0, false
 	}
 	return e.val, true

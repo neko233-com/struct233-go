@@ -12,7 +12,7 @@ import (
 	"github.com/neko233-com/struct233-go/skiplist"
 )
 
-func mustGet[K comparable, V any](t *testing.T, sl *skiplist.SkipList[K, V], key K) V {
+func mustGet[K comparable, V any](t *testing.T, sl *skiplist.SkipListMap[K, V], key K) V {
 	t.Helper()
 	v, ok := sl.Get(key)
 	require.True(t, ok, "key %v must exist", key)

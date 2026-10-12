@@ -6,6 +6,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-12
+
+### Changed
+
+- Breaking collection naming: explicit `HashSet`, `LinkedHashSet`,
+  `SkipListSet`, `SkipListMap`, `LinkedHashMap`, `HeapPriorityQueue`,
+  `ArrayDeque`, concrete concurrent variants, and `TokenBucketLimiter`.
+  Removed the misleading TreeMap aliases and old constructors without
+  compatibility wrappers; see `MIGRATION.md`.
+- `Set[T]` is a shared interface implemented by all four set styles;
+  `NavigableSet[T]` adds ordered queries. Set algebra accepts different
+  implementations with compatible equality. `LinkedHashSet.Equal` compares
+  members independently of insertion order.
+
+### Fixed
+
+- Semaphore head-waiter cancellation and release overflow; blocking queue
+  enqueue-after-close races; delay queue FIFO when an Element is reused.
+- Timing-wheel cancellation/Stop reference retention, negative timestamps,
+  and duration/hierarchy overflow.
+- Circuit-breaker panic accounting and stale completions across state resets.
+- Retry cancellation between attempts and delay overflow; token-bucket clock
+  rollback, non-finite rates, and sub-nanosecond reservation rounding.
+- Bloom-filter NaN and index overflow; weighted-random non-finite inputs and
+  zero-weight selection at subnormal totals; multiset total overflow.
+- TTL Peek/Contains expiry cleanup; stale references in skip lists, range
+  sets, hash rings, memoized suppliers, and timers; supplier clock-panic locking.
+
+### Performance and validation
+
+- RangeSet algebra uses ordered scans; RangeMap writes preserve order without
+  per-entry temporary sets or full sorting. Multiset TotalCount is O(1).
+- UUID entropy is fetched in a bounded crypto/rand buffer; UUID generation
+  remains allocation-free on Go 1.24 including Linux race builds.
+- Added regression, shared-interface, differential, concurrent, allocation,
+  and benchmark coverage. CI tests Go 1.24.x and the current stable toolchain
+  with race detection, vet, build, formatting and benchmark smoke checks.
+
 ## [0.3.0] - 2026-10-12
 
 ### Added

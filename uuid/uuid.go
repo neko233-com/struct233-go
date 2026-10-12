@@ -52,8 +52,9 @@ const (
 func New() UUID { return NewV4() }
 
 // NewV4 returns a random version 4 UUID: 122 random bits from crypto/rand, with
-// the version and variant bits set. Generation cannot fail on a supported
-// platform.
+// the version and variant bits set. Entropy is buffered under a mutex to avoid
+// per-call allocation on all supported Go versions. Generation cannot fail on
+// a supported platform.
 func NewV4() UUID {
 	var u UUID
 	fillRandom(u[:])
@@ -310,10 +311,26 @@ func encodeText(dst []byte, u UUID) {
 	hex.Encode(dst[24:36], u[10:16])
 }
 
-// fillRandom fills b with cryptographically secure random bytes.
+// entropy holds a bounded batch of crypto/rand bytes. Consumed bytes are
+// cleared, and the caller's stack buffer never escapes into crypto/rand.
+var entropy = struct {
+	sync.Mutex
+	bytes [4096]byte
+	next  int
+}{next: 4096}
+
+// fillRandom fills the internal UUID fields (at most 16 bytes per call).
 func fillRandom(b []byte) {
-	if _, err := rand.Read(b); err != nil {
-		// crypto/rand never fails on a supported platform
-		panic("uuid: crypto/rand failed: " + err.Error())
+	entropy.Lock()
+	defer entropy.Unlock()
+	if len(b) > len(entropy.bytes)-entropy.next {
+		if _, err := rand.Read(entropy.bytes[:]); err != nil {
+			panic("uuid: crypto/rand failed: " + err.Error())
+		}
+		entropy.next = 0
 	}
+	src := entropy.bytes[entropy.next : entropy.next+len(b)]
+	copy(b, src)
+	clear(src)
+	entropy.next += len(b)
 }

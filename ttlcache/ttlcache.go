@@ -37,6 +37,8 @@ func New[K comparable, V any](capacity int, ttl time.Duration) *Cache[K, V] {
 
 // NewWithClock creates a cache that reads the current time from now, which is
 // handy for deterministic tests. It panics on invalid arguments.
+// now runs under the cache's lock and must not call methods on the same Cache.
+// Cleanup and Keys each evaluate all entries against one clock reading.
 func NewWithClock[K comparable, V any](capacity int, ttl time.Duration, now func() time.Time) *Cache[K, V] {
 	if capacity <= 0 {
 		panic("ttlcache: capacity must be positive")
@@ -130,11 +132,18 @@ func (c *Cache[K, V]) Get(key K) (V, bool) {
 }
 
 // Peek returns the value for key without changing the recency order.
+// Expired entries are removed and reported as absent.
 func (c *Cache[K, V]) Peek(key K) (V, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	e, ok := c.m[key]
-	if !ok || c.expired(e) {
+	if !ok {
+		var zero V
+		return zero, false
+	}
+	if c.expired(e) {
+		c.unlink(e)
+		delete(c.m, key)
 		var zero V
 		return zero, false
 	}
@@ -166,9 +175,13 @@ func (c *Cache[K, V]) Cleanup() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	removed := 0
+	if len(c.m) == 0 {
+		return removed
+	}
+	now := c.now()
 	for e := c.tail.prev; e != c.head; {
 		prev := e.prev
-		if c.expired(e) {
+		if !now.Before(e.expiresAt) {
 			c.unlink(e)
 			delete(c.m, e.key)
 			removed++
@@ -192,8 +205,12 @@ func (c *Cache[K, V]) Keys() []K {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	out := make([]K, 0, len(c.m))
+	if len(c.m) == 0 {
+		return out
+	}
+	now := c.now()
 	for e := c.tail.prev; e != c.head; e = e.prev {
-		if !c.expired(e) {
+		if now.Before(e.expiresAt) {
 			out = append(out, e.key)
 		}
 	}

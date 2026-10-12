@@ -23,6 +23,7 @@ package semaphore
 
 import (
 	"context"
+	"math"
 	"sync"
 	"time"
 )
@@ -95,6 +96,7 @@ func (s *Semaphore) AcquireN(ctx context.Context, n int64) error {
 			return nil
 		}
 		s.removeLocked(w)
+		s.notifyLocked()
 		return ctx.Err()
 	}
 }
@@ -133,7 +135,8 @@ func (s *Semaphore) AcquireTimeout(n int64, d time.Duration) bool {
 	return s.AcquireN(ctx, n) == nil
 }
 
-// Release returns n permits to the semaphore. It panics when n < 0.
+// Release returns n permits to the semaphore. It panics when n < 0 or the
+// resulting permit count would overflow int64, leaving the count unchanged.
 //
 // Queued callers are served in FIFO order while their whole request fits.
 // Releasing more permits than are missing pushes Permits above Limit, which
@@ -149,7 +152,16 @@ func (s *Semaphore) Release(n int64) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if n > math.MaxInt64-s.available {
+		panic("semaphore: permit count overflow")
+	}
 	s.available += n
+	s.notifyLocked()
+}
+
+// notifyLocked grants every satisfiable request at the head of the queue.
+// Removing a cancelled head can make existing free permits usable again.
+func (s *Semaphore) notifyLocked() {
 	for len(s.waiters) > 0 && s.available >= s.waiters[0].n {
 		w := s.waiters[0]
 		s.waiters[0] = nil // do not keep the granted waiter alive through the queue

@@ -11,8 +11,8 @@ import (
 	struct233 "github.com/neko233-com/struct233-go"
 )
 
-func ExampleNewSet() {
-	s := struct233.NewSet(1, 2, 3)
+func ExampleNewHashSet() {
+	s := struct233.NewHashSet(1, 2, 3)
 	s.Add(4)
 	s.Remove(1)
 
@@ -25,8 +25,8 @@ func ExampleNewSet() {
 	// true
 }
 
-func ExampleNewSortedSet() {
-	s := struct233.NewSortedSet(30, 10, 20) // asserts ascending order, not insertion
+func ExampleNewSkipListSet() {
+	s := struct233.NewSkipListSet(30, 10, 20) // asserts ascending order, not insertion
 	fmt.Println(s.ToSlice())
 	fmt.Println(s.Contains(20))
 
@@ -39,8 +39,8 @@ func ExampleNewSortedSet() {
 	// 20 30
 }
 
-func ExampleNewSkipList() {
-	sl := struct233.NewSkipList[int, string]()
+func ExampleNewSkipListMap() {
+	sl := struct233.NewSkipListMap[int, string]()
 	sl.Put(30, "c")
 	sl.Put(10, "a")
 	sl.Put(20, "b")
@@ -56,8 +56,8 @@ func ExampleNewSkipList() {
 	// 10 20
 }
 
-func ExampleNewLinkedMap() {
-	m := struct233.NewLinkedMap[string, int]()
+func ExampleNewLinkedHashMap() {
+	m := struct233.NewLinkedHashMap[string, int]()
 	for i, name := range []string{"gamma", "alpha", "beta"} {
 		m.Put(name, i)
 	}
@@ -68,8 +68,8 @@ func ExampleNewLinkedMap() {
 	// [0 1 2]
 }
 
-func ExampleNewPriorityQueue() {
-	q := struct233.NewPriorityQueue[int]()
+func ExampleNewHeapPriorityQueue() {
+	q := struct233.NewHeapPriorityQueue[int]()
 	for _, v := range []int{5, 1, 3} {
 		q.Push(v)
 	}
@@ -84,8 +84,8 @@ func ExampleNewPriorityQueue() {
 	// 1 3 5
 }
 
-func ExampleNewDeque() {
-	d := struct233.NewDeque[int]()
+func ExampleNewArrayDeque() {
+	d := struct233.NewArrayDeque[int]()
 	d.PushBack(2)
 	d.PushFront(1)
 	fmt.Println(d.ToSlice())
@@ -139,8 +139,8 @@ func ExampleNewLRU() {
 	// [a c]
 }
 
-func ExampleNewConcurrentSkipList() {
-	ranking := struct233.NewConcurrentSkipList[int, string]() // goroutine-safe
+func ExampleNewConcurrentSkipListMap() {
+	ranking := struct233.NewConcurrentSkipListMap[int, string]() // goroutine-safe
 	ranking.Put(100, "p1")
 	ranking.Put(250, "p2")
 
@@ -152,8 +152,8 @@ func ExampleNewConcurrentSkipList() {
 	// [100 250]
 }
 
-func ExampleNewConcurrentQueue() {
-	jobs := struct233.NewConcurrentQueue[int](2) // bounded blocking queue
+func ExampleNewArrayBlockingQueue() {
+	jobs := struct233.NewArrayBlockingQueue[int](2) // bounded blocking queue
 	jobs.Put(1)
 	jobs.Put(2)
 
@@ -166,8 +166,8 @@ func ExampleNewConcurrentQueue() {
 	// 1 1
 }
 
-func ExampleNewConcurrentPriorityQueue() {
-	tasks := struct233.NewConcurrentPriorityQueue(func(a, b string) int {
+func ExampleNewHeapBlockingPriorityQueue() {
+	tasks := struct233.NewHeapBlockingPriorityQueue(func(a, b string) int {
 		return len(a) - len(b) // shortest task first
 	})
 	tasks.Put("cccc")
@@ -272,9 +272,9 @@ func ExampleNewWorkerPool() {
 	// true 1
 }
 
-func ExampleNewRateLimiter() {
+func ExampleNewTokenBucketLimiter() {
 	now := time.Unix(0, 0)
-	limiter := struct233.NewRateLimiter(2, 2, struct233.WithRateLimitClock(func() time.Time { return now }))
+	limiter := struct233.NewTokenBucketLimiter(2, 2, struct233.WithRateLimitClock(func() time.Time { return now }))
 
 	fmt.Println(limiter.Allow(), limiter.Allow(), limiter.Allow())
 	fmt.Println(limiter.AllowN(2))

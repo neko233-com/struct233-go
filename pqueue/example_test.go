@@ -6,7 +6,7 @@ import (
 	"github.com/neko233-com/struct233-go/pqueue"
 )
 
-func ExamplePriorityQueue() {
+func ExampleHeapPriorityQueue() {
 	q := pqueue.New[int]() // min-heap: the smallest element pops first
 	q.Push(3)
 	q.Push(1)
@@ -28,7 +28,7 @@ func ExamplePriorityQueue() {
 	// 3
 }
 
-func ExamplePriorityQueue_maxQueue() {
+func ExampleHeapPriorityQueue_maxQueue() {
 	// a reversed comparator turns the queue into a max-queue
 	q := pqueue.NewFunc(func(a, b int) int { return b - a })
 	q.Push(5)

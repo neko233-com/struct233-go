@@ -11,7 +11,7 @@ import (
 
 const benchSize = 1 << 14
 
-func benchSkipList(n int) *skiplist.SkipList[int, int] {
+func benchSkipList(n int) *skiplist.SkipListMap[int, int] {
 	sl := skiplist.New[int, int]()
 	rng := rand.New(rand.NewPCG(1, 2))
 	for range n {

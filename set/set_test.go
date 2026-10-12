@@ -47,6 +47,25 @@ func TestHashSetWithCapacity(t *testing.T) {
 	require.False(t, empty.Contains(0))
 }
 
+func TestLinkedHashSetWithCapacity(t *testing.T) {
+	for _, capacity := range []int{-1, 0, 2, 64} {
+		t.Run(fmt.Sprintf("capacity=%d", capacity), func(t *testing.T) {
+			s := set.NewLinkedHashSetWithCapacity(capacity, 3, 1, 3, 2)
+			require.Equal(t, []int{3, 1, 2}, s.ToSlice())
+			require.False(t, s.Add(1))
+			require.True(t, s.Remove(1))
+			require.True(t, s.Add(1))
+			require.Equal(t, []int{3, 2, 1}, s.ToSlice())
+			s.Clear()
+			require.True(t, s.Add(9))
+			require.Equal(t, []int{9}, s.ToSlice())
+		})
+	}
+	includeNone := set.NewLinkedHashSetWithCapacity[int](64)
+	require.Zero(t, includeNone.Len())
+	require.True(t, includeNone.Add(1))
+}
+
 func TestHashSetAlgebra(t *testing.T) {
 	a := set.NewHashSet(1, 2, 3, 4)
 	b := set.NewHashSet(3, 4, 5)
@@ -102,8 +121,8 @@ func TestContainsDoesNotAllocate(t *testing.T) {
 	require.Zero(t, allocs, "HashSet.Contains must not allocate")
 }
 
-func TestTreeSetOrdered(t *testing.T) {
-	ts := set.NewTreeSet(5, 1, 9, 3, 7)
+func TestSkipListSetOrdered(t *testing.T) {
+	ts := set.NewSkipListSet(5, 1, 9, 3, 7)
 	require.Equal(t, []int{1, 3, 5, 7, 9}, ts.ToSlice())
 
 	var iterated []int
@@ -126,8 +145,8 @@ func TestTreeSetOrdered(t *testing.T) {
 	require.Equal(t, 5, ts.Len())
 }
 
-func TestTreeSetNavigable(t *testing.T) {
-	ts := set.NewTreeSet(10, 20, 30, 40, 50)
+func TestSkipListSetNavigable(t *testing.T) {
+	ts := set.NewSkipListSet(10, 20, 30, 40, 50)
 
 	k, ok := ts.Ceiling(35)
 	require.True(t, ok)
@@ -152,15 +171,15 @@ func TestTreeSetNavigable(t *testing.T) {
 	_, ok = ts.Ceiling(51)
 	require.False(t, ok, "Ceiling(above max) must miss")
 
-	empty := set.NewTreeSet[int]()
+	empty := set.NewSkipListSet[int]()
 	_, ok = empty.First()
 	require.False(t, ok, "First on empty set must miss")
 	_, ok = empty.Last()
 	require.False(t, ok, "Last on empty set must miss")
 }
 
-func TestTreeSetRange(t *testing.T) {
-	ts := set.NewTreeSet(10, 20, 30, 40, 50)
+func TestSkipListSetRange(t *testing.T) {
+	ts := set.NewSkipListSet(10, 20, 30, 40, 50)
 
 	var exclusive []int
 	for k := range ts.Range(20, 40, false, false) {
@@ -175,8 +194,8 @@ func TestTreeSetRange(t *testing.T) {
 	require.Equal(t, []int{20, 30, 40}, inclusive)
 }
 
-func TestTreeSetCustomComparator(t *testing.T) {
-	ts := set.NewTreeSetFunc(func(a, b int) int { return b - a }, 3, 1, 2)
+func TestSkipListSetCustomComparator(t *testing.T) {
+	ts := set.NewSkipListSetFunc(func(a, b int) int { return b - a }, 3, 1, 2)
 	require.Equal(t, []int{3, 2, 1}, ts.ToSlice(), "descending comparator order")
 
 	first, ok := ts.First()
@@ -184,13 +203,13 @@ func TestTreeSetCustomComparator(t *testing.T) {
 	require.Equal(t, 3, first, "reversed comparator must flip First")
 }
 
-func TestTreeSetAlgebraAndClone(t *testing.T) {
-	a := set.NewTreeSet(1, 2, 3)
-	b := set.NewTreeSet(2, 3, 4)
+func TestSkipListSetAlgebraAndClone(t *testing.T) {
+	a := set.NewSkipListSet(1, 2, 3)
+	b := set.NewSkipListSet(2, 3, 4)
 
-	require.True(t, a.Union(b).Equal(set.NewTreeSet(1, 2, 3, 4)))
-	require.True(t, a.Intersection(b).Equal(set.NewTreeSet(2, 3)))
-	require.True(t, a.Difference(b).Equal(set.NewTreeSet(1)))
+	require.True(t, a.Union(b).Equal(set.NewSkipListSet(1, 2, 3, 4)))
+	require.True(t, a.Intersection(b).Equal(set.NewSkipListSet(2, 3)))
+	require.True(t, a.Difference(b).Equal(set.NewSkipListSet(1)))
 
 	c := a.Clone()
 	c.Add(9)
@@ -198,8 +217,8 @@ func TestTreeSetAlgebraAndClone(t *testing.T) {
 	require.Equal(t, []int{1, 2, 3, 9}, c.ToSlice())
 }
 
-func TestTreeSetPanicsOnNilComparator(t *testing.T) {
-	require.Panics(t, func() { set.NewTreeSetFunc[int](nil) })
+func TestSkipListSetPanicsOnNilComparator(t *testing.T) {
+	require.Panics(t, func() { set.NewSkipListSetFunc[int](nil) })
 }
 
 func TestLinkedHashSetOrder(t *testing.T) {
@@ -558,11 +577,11 @@ func TestLinkedHashSet_TableDriven(t *testing.T) {
 			}
 			require.Equal(t, 1, count)
 		}},
-		{"equal is order sensitive", func(t *testing.T) {
+		{"equal ignores insertion order", func(t *testing.T) {
 			a := set.NewLinkedHashSet(1, 2)
 			b := set.NewLinkedHashSet(2, 1)
-			require.False(t, a.Equal(b))
-			require.False(t, b.Equal(a))
+			require.True(t, a.Equal(b))
+			require.True(t, b.Equal(a))
 		}},
 		{"equal of identical order", func(t *testing.T) {
 			a := set.NewLinkedHashSet(1, 2)
@@ -605,88 +624,88 @@ func TestLinkedHashSet_TableDriven(t *testing.T) {
 	}
 }
 
-// TestTreeSet_TableDriven covers the exported TreeSet methods.
-func TestTreeSet_TableDriven(t *testing.T) {
+// TestSkipListSet_TableDriven covers the exported SkipListSet methods.
+func TestSkipListSet_TableDriven(t *testing.T) {
 	tests := []struct {
 		name string
 		run  func(t *testing.T)
 	}{
 		{"new with no items is empty", func(t *testing.T) {
-			ts := set.NewTreeSet[int]()
+			ts := set.NewSkipListSet[int]()
 			require.Zero(t, ts.Len())
 			require.Empty(t, ts.ToSlice())
 		}},
 		{"new sorts the items", func(t *testing.T) {
-			ts := set.NewTreeSet(3, 1, 2)
+			ts := set.NewSkipListSet(3, 1, 2)
 			require.Equal(t, []int{1, 2, 3}, ts.ToSlice())
 		}},
 		{"new collapses duplicates", func(t *testing.T) {
-			ts := set.NewTreeSet(1, 1, 1)
+			ts := set.NewSkipListSet(1, 1, 1)
 			require.Equal(t, 1, ts.Len())
 		}},
 		{"add new returns true", func(t *testing.T) {
-			ts := set.NewTreeSet[int]()
+			ts := set.NewSkipListSet[int]()
 			require.True(t, ts.Add(5))
 		}},
 		{"add duplicate returns false", func(t *testing.T) {
-			ts := set.NewTreeSet(5)
+			ts := set.NewSkipListSet(5)
 			require.False(t, ts.Add(5))
 		}},
 		{"add keeps sorted order", func(t *testing.T) {
-			ts := set.NewTreeSet(2)
+			ts := set.NewSkipListSet(2)
 			ts.Add(3)
 			ts.Add(1)
 			require.Equal(t, []int{1, 2, 3}, ts.ToSlice())
 		}},
 		{"add all with duplicates", func(t *testing.T) {
-			ts := set.NewTreeSet[int]()
+			ts := set.NewSkipListSet[int]()
 			ts.AddAll(2, 1, 2, 3)
 			require.Equal(t, []int{1, 2, 3}, ts.ToSlice())
 		}},
 		{"add all with no items", func(t *testing.T) {
-			ts := set.NewTreeSet[int]()
+			ts := set.NewSkipListSet[int]()
 			ts.AddAll()
 			require.Zero(t, ts.Len())
 		}},
 		{"remove hit returns true", func(t *testing.T) {
-			ts := set.NewTreeSet(1, 2, 3)
+			ts := set.NewSkipListSet(1, 2, 3)
 			require.True(t, ts.Remove(2))
 			require.Equal(t, []int{1, 3}, ts.ToSlice())
 		}},
 		{"remove miss returns false", func(t *testing.T) {
-			ts := set.NewTreeSet(1)
+			ts := set.NewSkipListSet(1)
 			require.False(t, ts.Remove(9))
 		}},
 		{"remove twice reports only once", func(t *testing.T) {
-			ts := set.NewTreeSet(1)
+			ts := set.NewSkipListSet(1)
 			require.True(t, ts.Remove(1))
 			require.False(t, ts.Remove(1))
 		}},
 		{"contains hit and miss", func(t *testing.T) {
-			ts := set.NewTreeSet(1, 2)
+			ts := set.NewSkipListSet(1, 2)
 			require.True(t, ts.Contains(2))
 			require.False(t, ts.Contains(3))
 		}},
 		{"len tracks add and remove", func(t *testing.T) {
-			ts := set.NewTreeSet(1, 2, 3)
+			ts := set.NewSkipListSet(1, 2, 3)
 			ts.Remove(3)
 			require.Equal(t, 2, ts.Len())
 		}},
 		{"clear empties the set", func(t *testing.T) {
-			ts := set.NewTreeSet(1, 2)
+			ts := set.NewSkipListSet(1, 2)
 			ts.Clear()
 			require.Zero(t, ts.Len())
 			require.False(t, ts.Contains(1))
 		}},
 		{"first and last on empty set miss", func(t *testing.T) {
-			ts := set.NewTreeSet[int]()
+			ts := set.NewSkipListSet[int]()
 			_, ok := ts.First()
 			require.False(t, ok)
 			_, ok = ts.Last()
 			require.False(t, ok)
 		}},
 		{"first and last on single element", func(t *testing.T) {
-			ts := set.NewTreeSet(7)
+			ts := set.NewSkipListSet(7)
 			k, ok := ts.First()
 			require.True(t, ok)
 			require.Equal(t, 7, k)
@@ -695,63 +714,63 @@ func TestTreeSet_TableDriven(t *testing.T) {
 			require.Equal(t, 7, k)
 		}},
 		{"floor hit exact", func(t *testing.T) {
-			ts := set.NewTreeSet(10, 20, 30)
+			ts := set.NewSkipListSet(10, 20, 30)
 			k, ok := ts.Floor(20)
 			require.True(t, ok)
 			require.Equal(t, 20, k)
 		}},
 		{"floor hit below an element", func(t *testing.T) {
-			ts := set.NewTreeSet(10, 20, 30)
+			ts := set.NewSkipListSet(10, 20, 30)
 			k, ok := ts.Floor(25)
 			require.True(t, ok)
 			require.Equal(t, 20, k)
 		}},
 		{"floor below the minimum misses", func(t *testing.T) {
-			ts := set.NewTreeSet(10, 20)
+			ts := set.NewSkipListSet(10, 20)
 			_, ok := ts.Floor(5)
 			require.False(t, ok)
 		}},
 		{"ceiling hit exact", func(t *testing.T) {
-			ts := set.NewTreeSet(10, 20, 30)
+			ts := set.NewSkipListSet(10, 20, 30)
 			k, ok := ts.Ceiling(20)
 			require.True(t, ok)
 			require.Equal(t, 20, k)
 		}},
 		{"ceiling hit above an element", func(t *testing.T) {
-			ts := set.NewTreeSet(10, 20, 30)
+			ts := set.NewSkipListSet(10, 20, 30)
 			k, ok := ts.Ceiling(15)
 			require.True(t, ok)
 			require.Equal(t, 20, k)
 		}},
 		{"ceiling above the maximum misses", func(t *testing.T) {
-			ts := set.NewTreeSet(10, 20)
+			ts := set.NewSkipListSet(10, 20)
 			_, ok := ts.Ceiling(25)
 			require.False(t, ok)
 		}},
 		{"lower hit", func(t *testing.T) {
-			ts := set.NewTreeSet(10, 20, 30)
+			ts := set.NewSkipListSet(10, 20, 30)
 			k, ok := ts.Lower(20)
 			require.True(t, ok)
 			require.Equal(t, 10, k)
 		}},
 		{"lower at the minimum misses", func(t *testing.T) {
-			ts := set.NewTreeSet(10, 20)
+			ts := set.NewSkipListSet(10, 20)
 			_, ok := ts.Lower(10)
 			require.False(t, ok)
 		}},
 		{"higher hit", func(t *testing.T) {
-			ts := set.NewTreeSet(10, 20, 30)
+			ts := set.NewSkipListSet(10, 20, 30)
 			k, ok := ts.Higher(20)
 			require.True(t, ok)
 			require.Equal(t, 30, k)
 		}},
 		{"higher at the maximum misses", func(t *testing.T) {
-			ts := set.NewTreeSet(10, 20)
+			ts := set.NewSkipListSet(10, 20)
 			_, ok := ts.Higher(20)
 			require.False(t, ok)
 		}},
 		{"floor ceiling lower higher on empty set miss", func(t *testing.T) {
-			ts := set.NewTreeSet[int]()
+			ts := set.NewSkipListSet[int]()
 			_, ok := ts.Floor(1)
 			require.False(t, ok)
 			_, ok = ts.Ceiling(1)
@@ -762,7 +781,7 @@ func TestTreeSet_TableDriven(t *testing.T) {
 			require.False(t, ok)
 		}},
 		{"range inclusive both ends", func(t *testing.T) {
-			ts := set.NewTreeSet(1, 2, 3, 4, 5)
+			ts := set.NewSkipListSet(1, 2, 3, 4, 5)
 			var got []int
 			for k := range ts.Range(2, 4, true, true) {
 				got = append(got, k)
@@ -770,7 +789,7 @@ func TestTreeSet_TableDriven(t *testing.T) {
 			require.Equal(t, []int{2, 3, 4}, got)
 		}},
 		{"range exclusive both ends", func(t *testing.T) {
-			ts := set.NewTreeSet(1, 2, 3, 4, 5)
+			ts := set.NewSkipListSet(1, 2, 3, 4, 5)
 			var got []int
 			for k := range ts.Range(2, 4, false, false) {
 				got = append(got, k)
@@ -778,7 +797,7 @@ func TestTreeSet_TableDriven(t *testing.T) {
 			require.Equal(t, []int{3}, got)
 		}},
 		{"range with no interior points", func(t *testing.T) {
-			ts := set.NewTreeSet(1, 2, 3)
+			ts := set.NewSkipListSet(1, 2, 3)
 			var got []int
 			for k := range ts.Range(1, 3, false, false) {
 				got = append(got, k)
@@ -786,7 +805,7 @@ func TestTreeSet_TableDriven(t *testing.T) {
 			require.Equal(t, []int{2}, got)
 		}},
 		{"range over empty set yields nothing", func(t *testing.T) {
-			ts := set.NewTreeSet[int]()
+			ts := set.NewSkipListSet[int]()
 			count := 0
 			for range ts.Range(0, 10, true, true) {
 				count++
@@ -794,47 +813,47 @@ func TestTreeSet_TableDriven(t *testing.T) {
 			require.Zero(t, count)
 		}},
 		{"to slice is ascending", func(t *testing.T) {
-			ts := set.NewTreeSet(5, 1, 3, 2, 4)
+			ts := set.NewSkipListSet(5, 1, 3, 2, 4)
 			require.Equal(t, []int{1, 2, 3, 4, 5}, ts.ToSlice())
 		}},
 		{"clone preserves order and is independent", func(t *testing.T) {
-			ts := set.NewTreeSet(3, 1, 2)
+			ts := set.NewSkipListSet(3, 1, 2)
 			c := ts.Clone()
 			c.Add(0)
 			require.Equal(t, []int{1, 2, 3}, ts.ToSlice())
 			require.Equal(t, []int{0, 1, 2, 3}, c.ToSlice())
 		}},
 		{"union intersection difference", func(t *testing.T) {
-			a := set.NewTreeSet(1, 2, 3)
-			b := set.NewTreeSet(2, 3, 4)
+			a := set.NewSkipListSet(1, 2, 3)
+			b := set.NewSkipListSet(2, 3, 4)
 			require.Equal(t, []int{1, 2, 3, 4}, a.Union(b).ToSlice())
 			require.Equal(t, []int{2, 3}, a.Intersection(b).ToSlice())
 			require.Equal(t, []int{1}, a.Difference(b).ToSlice())
 		}},
 		{"algebra with empty sets", func(t *testing.T) {
-			a := set.NewTreeSet(1, 2)
-			e := set.NewTreeSet[int]()
+			a := set.NewSkipListSet(1, 2)
+			e := set.NewSkipListSet[int]()
 			require.Equal(t, []int{1, 2}, a.Union(e).ToSlice())
 			require.Zero(t, a.Intersection(e).Len())
 			require.Equal(t, []int{1, 2}, a.Difference(e).ToSlice())
 		}},
 		{"equal compares contents", func(t *testing.T) {
-			a := set.NewTreeSet(1, 2)
-			b := set.NewTreeSet(2, 1)
+			a := set.NewSkipListSet(1, 2)
+			b := set.NewSkipListSet(2, 1)
 			require.True(t, a.Equal(b))
 			require.True(t, b.Equal(a))
-			require.False(t, a.Equal(set.NewTreeSet(1)))
+			require.False(t, a.Equal(set.NewSkipListSet(1)))
 		}},
 		{"equal of empty sets", func(t *testing.T) {
-			require.True(t, set.NewTreeSet[int]().Equal(set.NewTreeSet[int]()))
+			require.True(t, set.NewSkipListSet[int]().Equal(set.NewSkipListSet[int]()))
 		}},
 		{"nil comparator panics with prefix", func(t *testing.T) {
 			require.PanicsWithValue(t, "set: nil comparator", func() {
-				set.NewTreeSetFunc[int](nil)
+				set.NewSkipListSetFunc[int](nil)
 			})
 		}},
 		{"custom comparator with items", func(t *testing.T) {
-			ts := set.NewTreeSetFunc(func(a, b string) int {
+			ts := set.NewSkipListSetFunc(func(a, b string) int {
 				if a < b {
 					return -1
 				}
@@ -846,8 +865,8 @@ func TestTreeSet_TableDriven(t *testing.T) {
 			require.Equal(t, []string{"a", "b"}, ts.ToSlice())
 		}},
 		{"algebra never mutates operands", func(t *testing.T) {
-			a := set.NewTreeSet(1, 2, 3)
-			b := set.NewTreeSet(3, 4)
+			a := set.NewSkipListSet(1, 2, 3)
+			b := set.NewSkipListSet(3, 4)
 			a.Union(b)
 			a.Intersection(b)
 			a.Difference(b)
@@ -914,7 +933,7 @@ func TestSetAgainstModel(t *testing.T) {
 			rng := rand.New(rand.NewPCG(seed[0], seed[1]))
 			hs := set.NewHashSet[int]()
 			lhs := set.NewLinkedHashSet[int]()
-			ts := set.NewTreeSet[int]()
+			ts := set.NewSkipListSet[int]()
 			mdl := newSetModel()
 			for step := range 200 {
 				v := rng.IntN(20)
@@ -922,12 +941,12 @@ func TestSetAgainstModel(t *testing.T) {
 					want := mdl.add(v)
 					require.Equal(t, want, hs.Add(v), "step %d HashSet.Add(%d)", step, v)
 					require.Equal(t, want, lhs.Add(v), "step %d LinkedHashSet.Add(%d)", step, v)
-					require.Equal(t, want, ts.Add(v), "step %d TreeSet.Add(%d)", step, v)
+					require.Equal(t, want, ts.Add(v), "step %d SkipListSet.Add(%d)", step, v)
 				} else {
 					want := mdl.remove(v)
 					require.Equal(t, want, hs.Remove(v), "step %d HashSet.Remove(%d)", step, v)
 					require.Equal(t, want, lhs.Remove(v), "step %d LinkedHashSet.Remove(%d)", step, v)
-					require.Equal(t, want, ts.Remove(v), "step %d TreeSet.Remove(%d)", step, v)
+					require.Equal(t, want, ts.Remove(v), "step %d SkipListSet.Remove(%d)", step, v)
 				}
 
 				want := mdl.keys()
@@ -935,17 +954,17 @@ func TestSetAgainstModel(t *testing.T) {
 				slices.Sort(got)
 				require.Equal(t, want, got, "step %d HashSet contents", step)
 				require.True(t, slices.Equal(mdl.order, lhs.ToSlice()), "step %d LinkedHashSet order: %v vs %v", step, lhs.ToSlice(), mdl.order)
-				require.Equal(t, want, ts.ToSlice(), "step %d TreeSet contents", step)
+				require.Equal(t, want, ts.ToSlice(), "step %d SkipListSet contents", step)
 				require.Equal(t, len(mdl.m), hs.Len(), "step %d HashSet.Len", step)
 				require.Equal(t, len(mdl.m), lhs.Len(), "step %d LinkedHashSet.Len", step)
-				require.Equal(t, len(mdl.m), ts.Len(), "step %d TreeSet.Len", step)
+				require.Equal(t, len(mdl.m), ts.Len(), "step %d SkipListSet.Len", step)
 
 				// membership agrees everywhere
 				for i := range 20 {
 					_, want := mdl.m[i]
 					require.Equal(t, want, hs.Contains(i), "step %d HashSet.Contains(%d)", step, i)
 					require.Equal(t, want, lhs.Contains(i), "step %d LinkedHashSet.Contains(%d)", step, i)
-					require.Equal(t, want, ts.Contains(i), "step %d TreeSet.Contains(%d)", step, i)
+					require.Equal(t, want, ts.Contains(i), "step %d SkipListSet.Contains(%d)", step, i)
 				}
 			}
 		})
@@ -1035,13 +1054,13 @@ func TestSetAlgebraAgainstModel(t *testing.T) {
 	}
 }
 
-// TestTreeSetAgainstSortedSliceModel checks TreeSet ordering, navigation and
+// TestSkipListSetAgainstSortedSliceModel checks SkipListSet ordering, navigation and
 // Range against a sorted-deduplicated slice model.
-func TestTreeSetAgainstSortedSliceModel(t *testing.T) {
+func TestSkipListSetAgainstSortedSliceModel(t *testing.T) {
 	for _, seed := range [][2]uint64{{2026, 1012}, {7, 11}, {99, 4242}} {
 		t.Run(fmt.Sprintf("seed-%d-%d", seed[0], seed[1]), func(t *testing.T) {
 			rng := rand.New(rand.NewPCG(seed[0], seed[1]))
-			ts := set.NewTreeSet[int]()
+			ts := set.NewSkipListSet[int]()
 			model := make([]int, 0, 32) // sorted, no duplicates
 			for step := range 200 {
 				v := rng.IntN(30)

@@ -1,6 +1,6 @@
 // Package set provides Set implementations modeled after the JDK:
 // HashSet (unordered), LinkedHashSet (insertion-ordered) and
-// TreeSet (sorted, backed by a skip list).
+// SkipListSet (sorted, backed by a skip list).
 //
 // None of these types are safe for concurrent use.
 package set
@@ -70,12 +70,15 @@ func (s *HashSet[K]) ContainsAll(items ...K) bool {
 // Len returns the number of elements.
 func (s *HashSet[K]) Len() int { return len(s.m) }
 
+// IsEmpty reports whether the set contains no elements.
+func (s *HashSet[K]) IsEmpty() bool { return len(s.m) == 0 }
+
 // Clear removes all elements.
 func (s *HashSet[K]) Clear() { clear(s.m) }
 
 // Clone returns a shallow copy containing the same elements.
 func (s *HashSet[K]) Clone() *HashSet[K] {
-	c := NewHashSet[K]()
+	c := NewHashSetWithCapacity[K](s.Len())
 	for item := range s.m {
 		c.Add(item)
 	}
@@ -103,7 +106,7 @@ func (s *HashSet[K]) ToSlice() []K {
 }
 
 // Equal reports whether both sets contain exactly the same elements.
-func (s *HashSet[K]) Equal(other *HashSet[K]) bool {
+func (s *HashSet[K]) Equal(other Set[K]) bool {
 	if s.Len() != other.Len() {
 		return false
 	}
@@ -116,20 +119,28 @@ func (s *HashSet[K]) Equal(other *HashSet[K]) bool {
 }
 
 // Union returns a new set with the elements of s and other.
-func (s *HashSet[K]) Union(other *HashSet[K]) *HashSet[K] {
+func (s *HashSet[K]) Union(other Set[K]) *HashSet[K] {
 	out := NewHashSetWithCapacity[K](s.Len() + other.Len())
 	for item := range s.m {
 		out.Add(item)
 	}
-	for item := range other.m {
+	for item := range other.All() {
 		out.Add(item)
 	}
 	return out
 }
 
 // Intersection returns a new set with the elements present in both sets.
-func (s *HashSet[K]) Intersection(other *HashSet[K]) *HashSet[K] {
+func (s *HashSet[K]) Intersection(other Set[K]) *HashSet[K] {
 	out := NewHashSetWithCapacity[K](min(s.Len(), other.Len()))
+	if other.Len() < s.Len() {
+		for item := range other.All() {
+			if s.Contains(item) {
+				out.Add(item)
+			}
+		}
+		return out
+	}
 	for item := range s.m {
 		if other.Contains(item) {
 			out.Add(item)
@@ -139,7 +150,7 @@ func (s *HashSet[K]) Intersection(other *HashSet[K]) *HashSet[K] {
 }
 
 // Difference returns a new set with the elements of s that are not in other.
-func (s *HashSet[K]) Difference(other *HashSet[K]) *HashSet[K] {
+func (s *HashSet[K]) Difference(other Set[K]) *HashSet[K] {
 	out := NewHashSetWithCapacity[K](s.Len())
 	for item := range s.m {
 		if !other.Contains(item) {
@@ -151,14 +162,14 @@ func (s *HashSet[K]) Difference(other *HashSet[K]) *HashSet[K] {
 
 // SymmetricDifference returns a new set with the elements that are in
 // exactly one of the two sets.
-func (s *HashSet[K]) SymmetricDifference(other *HashSet[K]) *HashSet[K] {
+func (s *HashSet[K]) SymmetricDifference(other Set[K]) *HashSet[K] {
 	out := NewHashSetWithCapacity[K](s.Len() + other.Len())
 	for item := range s.m {
 		if !other.Contains(item) {
 			out.Add(item)
 		}
 	}
-	for item := range other.m {
+	for item := range other.All() {
 		if !s.Contains(item) {
 			out.Add(item)
 		}
@@ -167,7 +178,7 @@ func (s *HashSet[K]) SymmetricDifference(other *HashSet[K]) *HashSet[K] {
 }
 
 // IsSubsetOf reports whether every element of s is present in other.
-func (s *HashSet[K]) IsSubsetOf(other *HashSet[K]) bool {
+func (s *HashSet[K]) IsSubsetOf(other Set[K]) bool {
 	if s.Len() > other.Len() {
 		return false
 	}
@@ -180,6 +191,14 @@ func (s *HashSet[K]) IsSubsetOf(other *HashSet[K]) bool {
 }
 
 // IsSupersetOf reports whether every element of other is present in s.
-func (s *HashSet[K]) IsSupersetOf(other *HashSet[K]) bool {
-	return other.IsSubsetOf(s)
+func (s *HashSet[K]) IsSupersetOf(other Set[K]) bool {
+	if s.Len() < other.Len() {
+		return false
+	}
+	for item := range other.All() {
+		if !s.Contains(item) {
+			return false
+		}
+	}
+	return true
 }

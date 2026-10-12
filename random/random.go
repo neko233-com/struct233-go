@@ -274,7 +274,8 @@ func Sample[T any](g *Generator, items []T, n int) []T {
 // Weighted returns an element picked proportionally to weight; ok is false when
 // items is empty or every weight is <= 0. Negative weights are treated as zero.
 // A nil g means Default(). It is O(n) per pick: use WeightedTable for repeated
-// picks.
+// picks. The weight function must be stable across calls. Non-finite weights
+// or a total weight that overflows float64 panic.
 func Weighted[T any](g *Generator, items []T, weight func(T) float64) (T, bool) {
 	var zero T
 	if len(items) == 0 {
@@ -285,18 +286,21 @@ func Weighted[T any](g *Generator, items []T, weight func(T) float64) (T, bool) 
 	}
 	var total float64
 	for _, item := range items {
-		if w := weight(item); w > 0 {
+		if w := checkedWeight(weight(item)); w > 0 {
 			total += w
 		}
+	}
+	if math.IsInf(total, 1) {
+		panic("random: total weight must be finite")
 	}
 	if total <= 0 {
 		return zero, false
 	}
-	pick := orDefault(g).Float64() * total
+	pick := weightPick(orDefault(g), total)
 	var acc float64
 	last, found := zero, false
 	for _, item := range items {
-		if w := weight(item); w > 0 {
+		if w := checkedWeight(weight(item)); w > 0 {
 			if acc += w; pick < acc {
 				return item, true
 			}
@@ -321,7 +325,7 @@ type WeightedTable[T any] struct {
 // NewWeightedTable builds a picker over items. It panics when items is empty,
 // when weight is nil, or when the total weight is <= 0. A nil g means
 // Default(). The items are copied, so later changes to the caller's slice are
-// not seen.
+// not seen. Non-finite weights or a total that overflows float64 panic.
 func NewWeightedTable[T any](g *Generator, items []T, weight func(T) float64) *WeightedTable[T] {
 	if len(items) == 0 {
 		panic("random: items must not be empty")
@@ -336,16 +340,16 @@ func NewWeightedTable[T any](g *Generator, items []T, weight func(T) float64) *W
 	}
 	var total float64
 	for i, item := range items {
-		w := weight(item)
-		if w < 0 {
-			w = 0 // same rule as Weighted: negative weights are zero
-		}
+		w := checkedWeight(weight(item))
 		total += w
 		t.items[i] = item
 		t.prefix[i] = total
 	}
 	if total <= 0 {
 		panic("random: total weight must be positive")
+	}
+	if math.IsInf(total, 1) {
+		panic("random: total weight must be finite")
 	}
 	t.total = total
 	return t
@@ -358,12 +362,25 @@ func (t *WeightedTable[T]) Pick() (T, bool) {
 	if t == nil || len(t.items) == 0 {
 		return zero, false
 	}
-	idx := t.pickIndex(t.gen.Float64() * t.total)
-	if idx >= len(t.items) {
-		// only reachable through float rounding at the very top of the range
-		idx = len(t.items) - 1
-	}
+	idx := t.pickIndex(weightPick(t.gen, t.total))
 	return t.items[idx], true
+}
+
+func checkedWeight(w float64) float64 {
+	if math.IsNaN(w) || math.IsInf(w, 0) {
+		panic("random: weight must be finite")
+	}
+	return max(w, 0)
+}
+
+func weightPick(g *Generator, total float64) float64 {
+	pick := g.Float64() * total
+	// A subnormal total can round the product up to total even though the
+	// random draw is < 1. Keep trailing zero-weight buckets unreachable.
+	if pick >= total {
+		return math.Nextafter(total, 0)
+	}
+	return pick
 }
 
 // pickIndex returns the first index whose cumulative weight exceeds pick, which

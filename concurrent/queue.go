@@ -5,13 +5,13 @@ import (
 	"time"
 )
 
-// Queue is a bounded blocking FIFO queue, the analog of
+// ArrayBlockingQueue is a bounded blocking FIFO queue, the analog of
 // java.util.concurrent.ArrayBlockingQueue.
 //
 // Put/Offer block while the queue is full and Take/Poll block while it is
 // empty. Close unblocks every waiter; values already queued can still be
 // drained, and further Put/Offer calls fail.
-type Queue[T any] struct {
+type ArrayBlockingQueue[T any] struct {
 	mu       sync.Mutex
 	notEmpty *sync.Cond
 	notFull  *sync.Cond
@@ -21,30 +21,30 @@ type Queue[T any] struct {
 	closed   bool
 }
 
-// NewQueue creates a queue holding at most capacity elements. It panics if
+// NewArrayBlockingQueue creates a queue holding at most capacity elements. It panics if
 // capacity <= 0.
-func NewQueue[T any](capacity int) *Queue[T] {
+func NewArrayBlockingQueue[T any](capacity int) *ArrayBlockingQueue[T] {
 	if capacity <= 0 {
 		panic("concurrent: queue capacity must be positive")
 	}
-	q := &Queue[T]{buf: make([]T, capacity)}
+	q := &ArrayBlockingQueue[T]{buf: make([]T, capacity)}
 	q.notEmpty = sync.NewCond(&q.mu)
 	q.notFull = sync.NewCond(&q.mu)
 	return q
 }
 
 // Cap returns the fixed capacity.
-func (q *Queue[T]) Cap() int { return len(q.buf) }
+func (q *ArrayBlockingQueue[T]) Cap() int { return len(q.buf) }
 
 // Len returns the number of queued elements.
-func (q *Queue[T]) Len() int {
+func (q *ArrayBlockingQueue[T]) Len() int {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	return q.size
 }
 
 // Closed reports whether Close has been called.
-func (q *Queue[T]) Closed() bool {
+func (q *ArrayBlockingQueue[T]) Closed() bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	return q.closed
@@ -52,7 +52,7 @@ func (q *Queue[T]) Closed() bool {
 
 // Close unblocks all waiters. Queued elements stay drainable; Put and Offer
 // report failure afterwards.
-func (q *Queue[T]) Close() {
+func (q *ArrayBlockingQueue[T]) Close() {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.closed = true
@@ -62,7 +62,7 @@ func (q *Queue[T]) Close() {
 
 // Put enqueues v, blocking while the queue is full. It reports false when the
 // queue was closed (the value is dropped).
-func (q *Queue[T]) Put(v T) bool {
+func (q *ArrayBlockingQueue[T]) Put(v T) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	for q.size == len(q.buf) && !q.closed {
@@ -77,7 +77,7 @@ func (q *Queue[T]) Put(v T) bool {
 }
 
 // TryPut enqueues v without blocking, reporting whether it fit.
-func (q *Queue[T]) TryPut(v T) bool {
+func (q *ArrayBlockingQueue[T]) TryPut(v T) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if q.closed || q.size == len(q.buf) {
@@ -90,7 +90,7 @@ func (q *Queue[T]) TryPut(v T) bool {
 
 // Offer enqueues v, waiting at most timeout for space. It reports whether the
 // value was enqueued.
-func (q *Queue[T]) Offer(v T, timeout time.Duration) bool {
+func (q *ArrayBlockingQueue[T]) Offer(v T, timeout time.Duration) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if q.closed {
@@ -111,6 +111,9 @@ func (q *Queue[T]) Offer(v T, timeout time.Duration) bool {
 		}
 		q.waitLocked(q.notFull, deadline)
 	}
+	if q.closed {
+		return false
+	}
 	q.enqueueLocked(v)
 	q.notEmpty.Signal()
 	return true
@@ -118,7 +121,7 @@ func (q *Queue[T]) Offer(v T, timeout time.Duration) bool {
 
 // Take dequeues the oldest element, blocking while the queue is empty. It
 // reports false once the queue is closed and drained.
-func (q *Queue[T]) Take() (T, bool) {
+func (q *ArrayBlockingQueue[T]) Take() (T, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	for q.size == 0 && !q.closed {
@@ -132,7 +135,7 @@ func (q *Queue[T]) Take() (T, bool) {
 }
 
 // TryTake dequeues the oldest element without blocking.
-func (q *Queue[T]) TryTake() (T, bool) {
+func (q *ArrayBlockingQueue[T]) TryTake() (T, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if q.size == 0 {
@@ -143,7 +146,7 @@ func (q *Queue[T]) TryTake() (T, bool) {
 }
 
 // Poll dequeues the oldest element, waiting at most timeout for one to appear.
-func (q *Queue[T]) Poll(timeout time.Duration) (T, bool) {
+func (q *ArrayBlockingQueue[T]) Poll(timeout time.Duration) (T, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if timeout <= 0 {
@@ -166,7 +169,7 @@ func (q *Queue[T]) Poll(timeout time.Duration) (T, bool) {
 
 // All drains a snapshot of the queued elements without removing them,
 // from oldest to newest.
-func (q *Queue[T]) All() []T {
+func (q *ArrayBlockingQueue[T]) All() []T {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	out := make([]T, q.size)
@@ -182,7 +185,7 @@ func (q *Queue[T]) All() []T {
 
 // waitLocked blocks on cond until deadline fires or the cond is signalled; the
 // caller holds q.mu and must re-check the queue state afterwards.
-func (q *Queue[T]) waitLocked(cond *sync.Cond, deadline time.Time) {
+func (q *ArrayBlockingQueue[T]) waitLocked(cond *sync.Cond, deadline time.Time) {
 	timer := time.AfterFunc(time.Until(deadline), func() {
 		q.mu.Lock()
 		cond.Broadcast()
@@ -192,7 +195,7 @@ func (q *Queue[T]) waitLocked(cond *sync.Cond, deadline time.Time) {
 	timer.Stop()
 }
 
-func (q *Queue[T]) enqueueLocked(v T) {
+func (q *ArrayBlockingQueue[T]) enqueueLocked(v T) {
 	idx := q.head + q.size
 	if idx >= len(q.buf) {
 		idx -= len(q.buf)
@@ -201,7 +204,7 @@ func (q *Queue[T]) enqueueLocked(v T) {
 	q.size++
 }
 
-func (q *Queue[T]) dequeueLocked() T {
+func (q *ArrayBlockingQueue[T]) dequeueLocked() T {
 	v := q.buf[q.head]
 	clear(q.buf[q.head : q.head+1])
 	if q.head++; q.head == len(q.buf) {

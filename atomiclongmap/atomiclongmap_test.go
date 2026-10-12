@@ -350,7 +350,7 @@ func TestRangeTableDriven(t *testing.T) {
 		{"empty map", map[string]int64{}, 0, map[string]int64{}},
 		{"single pair", map[string]int64{"a": 7}, 0, map[string]int64{"a": 7}},
 		{"all pairs visited", map[string]int64{"a": 1, "b": -2, "c": 0}, 0, map[string]int64{"a": 1, "b": -2, "c": 0}},
-		{"early stop after one", map[string]int64{"a": 1, "b": 2, "c": 3}, 1, map[string]int64{"a": 1}},
+		{"early stop after one", map[string]int64{"a": 1, "b": 2, "c": 3}, 1, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -365,7 +365,17 @@ func TestRangeTableDriven(t *testing.T) {
 				count++
 				return tt.stopAfter == 0 || count < tt.stopAfter
 			})
-			require.Equal(t, tt.wantSeen, seen)
+			if tt.stopAfter > 0 {
+				require.Equal(t, tt.stopAfter, count, "Range must honor early termination")
+				require.Len(t, seen, tt.stopAfter)
+				for key, value := range seen {
+					expected, present := tt.pairs[key]
+					require.True(t, present)
+					require.Equal(t, expected, value)
+				}
+			} else {
+				require.Equal(t, tt.wantSeen, seen)
+			}
 		})
 	}
 

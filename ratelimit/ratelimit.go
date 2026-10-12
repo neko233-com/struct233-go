@@ -24,6 +24,7 @@ package ratelimit
 
 import (
 	"context"
+	"math"
 	"sync"
 	"time"
 )
@@ -72,11 +73,12 @@ type Limiter struct {
 }
 
 // New creates a limiter that admits rate events per second with the given
-// burst capacity. It panics when rate <= 0, burst < 1 or an option is invalid.
+// burst capacity. It panics when rate is non-finite or <= 0, burst < 1, or an
+// option is invalid.
 func New(rate float64, burst int, opts ...Option) *Limiter {
 	l := &Limiter{rate: rate, burst: burst, now: resolveClock(opts)}
-	if l.rate <= 0 {
-		panic("ratelimit: rate must be positive")
+	if l.rate <= 0 || math.IsNaN(l.rate) || math.IsInf(l.rate, 0) {
+		panic("ratelimit: rate must be finite and positive")
 	}
 	if l.burst < 1 {
 		panic("ratelimit: burst must be at least 1")
@@ -128,7 +130,8 @@ func (l *Limiter) AllowN(n int) bool {
 
 // Reserve returns how long the caller must wait before one token becomes
 // available, WITHOUT consuming it (zero when a token is available now). Its
-// result is deterministic under an injected clock.
+// result is deterministic under an injected clock. It rounds up to the next
+// nanosecond and saturates at the maximum time.Duration.
 func (l *Limiter) Reserve() time.Duration {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -136,7 +139,11 @@ func (l *Limiter) Reserve() time.Duration {
 	if l.tokens >= 1 {
 		return 0
 	}
-	return time.Duration((1 - l.tokens) / l.rate * float64(time.Second))
+	d := math.Ceil((1 - l.tokens) / l.rate * float64(time.Second))
+	if d >= float64(math.MaxInt64) {
+		return time.Duration(math.MaxInt64)
+	}
+	return time.Duration(d)
 }
 
 // Wait blocks until one token could be consumed and consumes it, or returns
@@ -332,7 +339,7 @@ func (l *Limiter) refill() {
 	now := l.now()
 	elapsed := now.Sub(l.last).Seconds()
 	if elapsed < 0 {
-		elapsed = 0
+		return // retain the high-water mark; a clock rollback earns no tokens
 	}
 	l.tokens += elapsed * l.rate
 	if limit := float64(l.burst); l.tokens > limit {

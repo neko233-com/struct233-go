@@ -183,7 +183,7 @@ func TestPriorityQueueOrdering(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			q := concurrent.NewPriorityQueue[pqTask](tt.cmp)
+			q := concurrent.NewHeapBlockingPriorityQueue[pqTask](tt.cmp)
 			for _, task := range tt.pushes {
 				require.True(t, q.TryPut(task))
 			}
@@ -296,11 +296,11 @@ func TestPriorityQueueAgainstSliceModel(t *testing.T) {
 				capacity = 8
 			}
 
-			var q *concurrent.PriorityQueue[int]
+			var q *concurrent.HeapBlockingPriorityQueue[int]
 			if capacity == 0 {
-				q = concurrent.NewPriorityQueue[int](cmpFn)
+				q = concurrent.NewHeapBlockingPriorityQueue[int](cmpFn)
 			} else {
-				q = concurrent.NewPriorityQueueCapacity[int](cmpFn, capacity)
+				q = concurrent.NewHeapBlockingPriorityQueueWithCapacity[int](cmpFn, capacity)
 			}
 			ref := newPQRefModel(cmpFn, capacity)
 
@@ -360,7 +360,7 @@ func TestPriorityQueueStableOrderDifferential(t *testing.T) {
 			r := rand.New(rand.NewSource(1000 + seed))
 			cmpFn := pqIntCmps()[seed%3]
 
-			q := concurrent.NewPriorityQueue[int](cmpFn)
+			q := concurrent.NewHeapBlockingPriorityQueue[int](cmpFn)
 			pushes := make([]int, 64)
 			for i := range pushes {
 				pushes[i] = r.Intn(16) - 8 // heavy duplicates stress the tie-break
@@ -382,7 +382,7 @@ func TestPriorityQueueStableOrderDifferential(t *testing.T) {
 }
 
 func TestPriorityQueueFIFOTieBreak(t *testing.T) {
-	q := concurrent.NewPriorityQueue[pqTask](pqCmpPri)
+	q := concurrent.NewHeapBlockingPriorityQueue[pqTask](pqCmpPri)
 
 	// push equal priorities in a known order, interleaved with other priorities
 	require.True(t, q.Put(pqTask{2, "tie1"}))
@@ -411,7 +411,7 @@ func TestPriorityQueueFIFOTieBreak(t *testing.T) {
 }
 
 func TestPriorityQueueUnboundedPutNeverBlocks(t *testing.T) {
-	q := concurrent.NewPriorityQueue[int](func(a, b int) int { return a - b })
+	q := concurrent.NewHeapBlockingPriorityQueue[int](func(a, b int) int { return a - b })
 
 	done := make(chan struct{})
 	go func() {
@@ -430,7 +430,7 @@ func TestPriorityQueueUnboundedPutNeverBlocks(t *testing.T) {
 }
 
 func TestPriorityQueueBoundedPutBlocksUntilSpace(t *testing.T) {
-	q := concurrent.NewPriorityQueueCapacity[int](func(a, b int) int { return a - b }, 2)
+	q := concurrent.NewHeapBlockingPriorityQueueWithCapacity[int](func(a, b int) int { return a - b }, 2)
 	require.True(t, q.TryPut(1))
 	require.True(t, q.TryPut(2))
 	require.False(t, q.TryPut(3), "TryPut must fail on a full bounded queue")
@@ -460,7 +460,7 @@ func TestPriorityQueueBoundedPutBlocksUntilSpace(t *testing.T) {
 }
 
 func TestPriorityQueueOfferTimeoutAndSuccess(t *testing.T) {
-	q := concurrent.NewPriorityQueueCapacity[pqTask](pqCmpPri, 1)
+	q := concurrent.NewHeapBlockingPriorityQueueWithCapacity[pqTask](pqCmpPri, 1)
 	require.True(t, q.TryPut(pqTask{1, "held"}))
 
 	require.False(t, q.Offer(pqTask{2, "x"}, 0), "Offer without timeout must fail on a full queue")
@@ -487,14 +487,14 @@ func TestPriorityQueueOfferTimeoutAndSuccess(t *testing.T) {
 }
 
 func TestPriorityQueueOfferOnUnboundedIgnoresTimeout(t *testing.T) {
-	q := concurrent.NewPriorityQueue[int](func(a, b int) int { return a - b })
+	q := concurrent.NewHeapBlockingPriorityQueue[int](func(a, b int) int { return a - b })
 	require.True(t, q.Offer(1, 0))
 	require.True(t, q.Offer(2, 20*time.Millisecond), "an unbounded queue always has room")
 	require.Equal(t, 2, q.Len())
 }
 
 func TestPriorityQueueTakeBlocksUntilPut(t *testing.T) {
-	q := concurrent.NewPriorityQueue[int](func(a, b int) int { return a - b })
+	q := concurrent.NewHeapBlockingPriorityQueue[int](func(a, b int) int { return a - b })
 
 	done := make(chan int, 1)
 	go func() {
@@ -518,7 +518,7 @@ func TestPriorityQueueTakeBlocksUntilPut(t *testing.T) {
 }
 
 func TestPriorityQueuePollTimeoutAndSuccess(t *testing.T) {
-	q := concurrent.NewPriorityQueue[int](func(a, b int) int { return a - b })
+	q := concurrent.NewHeapBlockingPriorityQueue[int](func(a, b int) int { return a - b })
 
 	v, ok := q.Poll(10 * time.Millisecond)
 	require.False(t, ok, "Poll must time out on an empty queue")
@@ -538,7 +538,7 @@ func TestPriorityQueuePollTimeoutAndSuccess(t *testing.T) {
 }
 
 func TestPriorityQueuePollWakesOnPut(t *testing.T) {
-	q := concurrent.NewPriorityQueue[int](func(a, b int) int { return a - b })
+	q := concurrent.NewHeapBlockingPriorityQueue[int](func(a, b int) int { return a - b })
 
 	done := make(chan int, 1)
 	go func() {
@@ -562,7 +562,7 @@ func TestPriorityQueuePollWakesOnPut(t *testing.T) {
 }
 
 func TestPriorityQueuePeekAndLen(t *testing.T) {
-	q := concurrent.NewPriorityQueueCapacity[pqTask](pqCmpPri, 4)
+	q := concurrent.NewHeapBlockingPriorityQueueWithCapacity[pqTask](pqCmpPri, 4)
 
 	_, ok := q.Peek()
 	require.False(t, ok, "Peek on empty queue must miss")
@@ -583,7 +583,7 @@ func TestPriorityQueuePeekAndLen(t *testing.T) {
 }
 
 func TestPriorityQueueCloseWakesBlockedTakers(t *testing.T) {
-	q := concurrent.NewPriorityQueue[int](func(a, b int) int { return a - b })
+	q := concurrent.NewHeapBlockingPriorityQueue[int](func(a, b int) int { return a - b })
 
 	const waiters = 3
 	takeDone := make(chan bool, waiters)
@@ -612,7 +612,7 @@ func TestPriorityQueueCloseWakesBlockedTakers(t *testing.T) {
 }
 
 func TestPriorityQueueCloseWakesBlockedPutters(t *testing.T) {
-	q := concurrent.NewPriorityQueueCapacity[int](func(a, b int) int { return a - b }, 1)
+	q := concurrent.NewHeapBlockingPriorityQueueWithCapacity[int](func(a, b int) int { return a - b }, 1)
 	require.True(t, q.TryPut(1))
 	require.False(t, q.TryPut(2), "queue is full")
 
@@ -639,7 +639,7 @@ func TestPriorityQueueCloseWakesBlockedPutters(t *testing.T) {
 }
 
 func TestPriorityQueueDrainAfterClose(t *testing.T) {
-	q := concurrent.NewPriorityQueue[int](func(a, b int) int { return a - b })
+	q := concurrent.NewHeapBlockingPriorityQueue[int](func(a, b int) int { return a - b })
 	require.True(t, q.TryPut(2))
 	require.True(t, q.TryPut(1))
 
@@ -663,7 +663,7 @@ func TestPriorityQueueDrainAfterClose(t *testing.T) {
 }
 
 func TestPriorityQueuePutFailsAfterClose(t *testing.T) {
-	q := concurrent.NewPriorityQueueCapacity[int](func(a, b int) int { return a - b }, 4)
+	q := concurrent.NewHeapBlockingPriorityQueueWithCapacity[int](func(a, b int) int { return a - b }, 4)
 	q.Close()
 
 	require.False(t, q.Put(1))
@@ -682,7 +682,7 @@ func TestPriorityQueueConcurrentProducersConsumers(t *testing.T) {
 	// each producer pushes its own strictly increasing range; value-to-insert
 	// order is nondeterministic across producers, so the assertions below check
 	// exactly-once delivery rather than global monotonicity
-	q := concurrent.NewPriorityQueue[int](func(a, b int) int { return a - b })
+	q := concurrent.NewHeapBlockingPriorityQueue[int](func(a, b int) int { return a - b })
 
 	var (
 		pwg sync.WaitGroup
@@ -758,7 +758,7 @@ func TestPriorityQueueConcurrentProducersConsumers(t *testing.T) {
 
 func TestPriorityQueueConcurrentBoundedRoundTrip(t *testing.T) {
 	const total = 2000
-	q := concurrent.NewPriorityQueueCapacity[int](func(a, b int) int { return a - b }, 16)
+	q := concurrent.NewHeapBlockingPriorityQueueWithCapacity[int](func(a, b int) int { return a - b }, 16)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -793,7 +793,7 @@ func TestPriorityQueueConcurrentBoundedRoundTrip(t *testing.T) {
 }
 
 func TestPriorityQueuePeekLenZeroAlloc(t *testing.T) {
-	q := concurrent.NewPriorityQueue[int](func(a, b int) int { return a - b })
+	q := concurrent.NewHeapBlockingPriorityQueue[int](func(a, b int) int { return a - b })
 	for i := range 128 {
 		q.Put(i)
 	}
@@ -809,16 +809,16 @@ func TestPriorityQueuePanicsOnBadArgs(t *testing.T) {
 	cmpFn := func(a, b int) int { return a - b }
 
 	require.PanicsWithValue(t, "concurrent: nil comparator", func() {
-		concurrent.NewPriorityQueue[int](nil)
+		concurrent.NewHeapBlockingPriorityQueue[int](nil)
 	})
 	require.PanicsWithValue(t, "concurrent: nil comparator", func() {
-		concurrent.NewPriorityQueueCapacity[int](nil, 4)
+		concurrent.NewHeapBlockingPriorityQueueWithCapacity[int](nil, 4)
 	})
 	require.PanicsWithValue(t, "concurrent: priority queue capacity must be positive", func() {
-		concurrent.NewPriorityQueueCapacity[int](cmpFn, 0)
+		concurrent.NewHeapBlockingPriorityQueueWithCapacity[int](cmpFn, 0)
 	})
 	require.PanicsWithValue(t, "concurrent: priority queue capacity must be positive", func() {
-		concurrent.NewPriorityQueueCapacity[int](cmpFn, -1)
+		concurrent.NewHeapBlockingPriorityQueueWithCapacity[int](cmpFn, -1)
 	})
 }
 
@@ -830,7 +830,7 @@ func FuzzPriorityQueueAgainstModel(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, ops []byte) {
 		cmpFn := func(a, b int) int { return a - b }
-		q := concurrent.NewPriorityQueue[int](cmpFn)
+		q := concurrent.NewHeapBlockingPriorityQueue[int](cmpFn)
 		ref := newPQRefModel(cmpFn, 0)
 
 		for i, b := range ops {

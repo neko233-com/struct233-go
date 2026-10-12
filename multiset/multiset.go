@@ -26,6 +26,7 @@ package multiset
 import (
 	"iter"
 	"maps"
+	"math"
 )
 
 // Multiset counts how many times each element occurs
@@ -34,6 +35,7 @@ import (
 type Multiset[T comparable] struct {
 	counts map[T]int
 	order  []T // distinct elements in first-insertion order
+	total  int // maintained with counts; never exceeds math.MaxInt
 }
 
 // New creates a multiset, optionally pre-filled with elems (each one counted
@@ -59,14 +61,15 @@ func NewWithCapacity[T comparable](capacity int, elems ...T) *Multiset[T] {
 	return m
 }
 
-// Add counts one more occurrence of elem and returns the new count.
+// Add counts one more occurrence of elem and returns the new count. It panics
+// without changing the multiset when the total would overflow int.
 func (m *Multiset[T]) Add(elem T) int {
 	m.addN(elem, 1)
 	return m.counts[elem]
 }
 
 // AddN counts n more occurrences of elem and returns the new count. It panics
-// when n is negative.
+// when n is negative or the total would overflow int, without changing state.
 func (m *Multiset[T]) AddN(elem T, n int) int {
 	if n < 0 {
 		panic("multiset: negative count")
@@ -98,6 +101,7 @@ func (m *Multiset[T]) RemoveN(elem T, n int) int {
 		return 0
 	}
 	m.counts[elem] = cur - n
+	m.total -= n
 	return cur - n
 }
 
@@ -112,7 +116,8 @@ func (m *Multiset[T]) RemoveAll(elem T) int {
 }
 
 // SetCount stores an exact count for elem, dropping the element when n is zero.
-// It panics when n is negative.
+// It panics without changing state when n is negative or the total would
+// overflow int.
 func (m *Multiset[T]) SetCount(elem T, n int) {
 	if n < 0 {
 		panic("multiset: negative count")
@@ -124,10 +129,15 @@ func (m *Multiset[T]) SetCount(elem T, n int) {
 		}
 		return
 	}
+	delta := n - m.counts[elem]
+	if delta > math.MaxInt-m.total {
+		panic("multiset: total count overflow")
+	}
 	if !present {
 		m.order = append(m.order, elem)
 	}
 	m.counts[elem] = n
+	m.total += delta
 }
 
 // Count returns how many times elem occurs.
@@ -141,13 +151,9 @@ func (m *Multiset[T]) Contains(elem T) bool {
 	return ok && n > 0
 }
 
-// TotalCount returns the sum of all counts.
+// TotalCount returns the sum of all counts in O(1) time.
 func (m *Multiset[T]) TotalCount() int {
-	total := 0
-	for _, n := range m.counts {
-		total += n
-	}
-	return total
+	return m.total
 }
 
 // Distinct returns how many different elements are stored.
@@ -216,6 +222,7 @@ func (m *Multiset[T]) Clear() {
 	clear(m.counts)
 	clear(m.order)
 	m.order = m.order[:0]
+	m.total = 0
 }
 
 // All iterates one element per occurrence, grouped by first insertion order.
@@ -233,10 +240,14 @@ func (m *Multiset[T]) All() iter.Seq[T] {
 
 // addN bumps the count of elem, recording a first sighting in the order slice.
 func (m *Multiset[T]) addN(elem T, n int) {
+	if n > math.MaxInt-m.total {
+		panic("multiset: total count overflow")
+	}
 	if _, ok := m.counts[elem]; !ok {
 		m.order = append(m.order, elem)
 	}
 	m.counts[elem] += n
+	m.total += n
 }
 
 // drop deletes elem from the map and compacts the insertion order in place.
@@ -244,6 +255,7 @@ func (m *Multiset[T]) drop(elem T) {
 	if _, ok := m.counts[elem]; !ok {
 		return
 	}
+	m.total -= m.counts[elem]
 	delete(m.counts, elem)
 	for i, e := range m.order {
 		if e == elem {

@@ -54,8 +54,8 @@ func ExampleLinkedHashSet() {
 	// [1 2 3]
 }
 
-func ExampleTreeSet() {
-	ts := set.NewTreeSet(5, 1, 9, 3, 7)
+func ExampleSkipListSet() {
+	ts := set.NewSkipListSet(5, 1, 9, 3, 7)
 	fmt.Println(ts.ToSlice())
 	first, _ := ts.First()
 	last, _ := ts.Last()
@@ -69,8 +69,8 @@ func ExampleTreeSet() {
 	// 5 3
 }
 
-func ExampleTreeSet_Range() {
-	ts := set.NewTreeSet(10, 20, 30, 40, 50)
+func ExampleSkipListSet_Range() {
+	ts := set.NewSkipListSet(10, 20, 30, 40, 50)
 	for v := range ts.Range(20, 40, true, false) {
 		fmt.Println(v)
 	}

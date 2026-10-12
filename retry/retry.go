@@ -72,11 +72,12 @@ func WithMaxDelay(d time.Duration) Option {
 	}
 }
 
-// WithMultiplier sets the exponential growth factor. Default 2. Values < 1 panic.
+// WithMultiplier sets the exponential growth factor. Default 2. Non-finite
+// values and values < 1 panic.
 func WithMultiplier(f float64) Option {
 	return func(p *Policy) {
-		if f < 1 {
-			panic("retry: multiplier must be at least 1")
+		if f < 1 || math.IsNaN(f) || math.IsInf(f, 0) {
+			panic("retry: multiplier must be finite and at least 1")
 		}
 		p.multiplier = f
 	}
@@ -84,11 +85,11 @@ func WithMultiplier(f float64) Option {
 
 // WithJitter sets how much the delay is randomised: the delay is multiplied by
 // a random factor in [1-j, 1+j]. Default 0.2; 0 disables jitter, j outside
-// [0, 1) panics. The jitter is applied after the WithMaxDelay cap, so a jittered
+// [0, 1) or NaN panics. The jitter is applied after the WithMaxDelay cap, so a jittered
 // delay can reach MaxDelay*(1+j).
 func WithJitter(j float64) Option {
 	return func(p *Policy) {
-		if j < 0 || j >= 1 {
+		if j < 0 || j >= 1 || math.IsNaN(j) {
 			panic("retry: jitter must be in [0, 1)")
 		}
 		p.jitter = j
@@ -174,6 +175,9 @@ func (p *Policy) Do(ctx context.Context, fn func(ctx context.Context) error) err
 	}
 	var lastErr error
 	for attempt := 1; attempt <= p.maxAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return errors.Join(lastErr, err)
+		}
 		err := fn(ctx)
 		if err == nil {
 			return nil
@@ -225,6 +229,9 @@ func Do(ctx context.Context, fn func(ctx context.Context) error, opts ...Option)
 // backoff returns the delay that follows the given failed attempt (1-based):
 // base*multiplier^(attempt-1), capped at MaxDelay and then jittered.
 func (p *Policy) backoff(attempt int) time.Duration {
+	if p.baseDelay == 0 {
+		return 0 // avoid 0 * +Inf when the exponential factor overflows
+	}
 	d := float64(p.baseDelay) * math.Pow(p.multiplier, float64(attempt-1))
 	if d > float64(p.maxDelay) {
 		d = float64(p.maxDelay)
@@ -233,6 +240,9 @@ func (p *Policy) backoff(attempt int) time.Duration {
 		// the global source is safe for concurrent use, which keeps a shared
 		// Policy race-free
 		d *= 1 + p.jitter*(2*rand.Float64()-1)
+	}
+	if d >= float64(math.MaxInt64) {
+		return time.Duration(math.MaxInt64)
 	}
 	return time.Duration(d)
 }

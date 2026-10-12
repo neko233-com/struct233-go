@@ -41,16 +41,16 @@ func BenchmarkHashSetUnion(b *testing.B) {
 	}
 }
 
-func BenchmarkTreeSetAdd(b *testing.B) {
+func BenchmarkSkipListSetAdd(b *testing.B) {
 	b.ReportAllocs()
-	ts := set.NewTreeSet[int]()
+	ts := set.NewSkipListSet[int]()
 	for i := 0; b.Loop(); i++ {
 		ts.Add(i)
 	}
 }
 
-func BenchmarkTreeSetContains(b *testing.B) {
-	ts := set.NewTreeSet[int]()
+func BenchmarkSkipListSetContains(b *testing.B) {
+	ts := set.NewSkipListSet[int]()
 	for i := range 1024 {
 		ts.Add(i)
 	}

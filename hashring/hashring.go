@@ -32,6 +32,8 @@ import (
 )
 
 // Hasher hashes a key to a 64-bit value.
+// It must be deterministic, safe for concurrent calls, and must neither modify
+// nor retain key: lookups pass a read-only view of the caller's string.
 type Hasher func(key []byte) uint64
 
 // defaultReplicas is the virtual node count used when no option overrides it.
@@ -220,6 +222,8 @@ func (r *Ring) rebuild() {
 	if cap(r.points) < total {
 		r.points = make([]uint64, 0, total)
 		r.owners = make([]string, 0, total)
+	} else if total < len(r.owners) {
+		clear(r.owners[total:])
 	}
 	r.points = r.points[:0]
 	r.owners = r.owners[:0]

@@ -39,17 +39,14 @@ func (m *RangeMap[K, V]) Put(r rangeset.Range[K], value V) {
 	if r.IsEmpty() {
 		return
 	}
-	out := make([]Entry[K, V], 0, len(m.entries)+1)
+	out := make([]Entry[K, V], 0, len(m.entries)+2)
 	for _, entry := range m.entries {
-		remaining := rangeset.NewSet[K]()
-		remaining.Add(entry.Range)
-		remaining.Remove(r)
-		for _, part := range remaining.Spans() {
-			out = append(out, Entry[K, V]{Range: part, Value: entry.Value})
-		}
+		out = appendRemainder(out, entry, r)
 	}
-	out = append(out, Entry[K, V]{Range: r, Value: value})
-	sort.Slice(out, func(i, j int) bool { return less(out[i].Range, out[j].Range) })
+	i := sort.Search(len(out), func(i int) bool { return !less(out[i].Range, r) })
+	out = append(out, Entry[K, V]{})
+	copy(out[i+1:], out[i:])
+	out[i] = Entry[K, V]{Range: r, Value: value}
 	m.entries = out
 }
 
@@ -103,14 +100,36 @@ func (m *RangeMap[K, V]) Remove(r rangeset.Range[K]) {
 	}
 	out := make([]Entry[K, V], 0, len(m.entries)+1)
 	for _, entry := range m.entries {
-		remaining := rangeset.NewSet[K]()
-		remaining.Add(entry.Range)
-		remaining.Remove(r)
-		for _, part := range remaining.Spans() {
+		out = appendRemainder(out, entry, r)
+	}
+	m.entries = out
+}
+
+// appendRemainder preserves the ordered portions outside removed without
+// constructing a temporary RangeSet and span slices for each entry.
+func appendRemainder[K cmp.Ordered, V any](out []Entry[K, V], entry Entry[K, V], removed rangeset.Range[K]) []Entry[K, V] {
+	if _, ok := entry.Range.Intersection(removed); !ok {
+		return append(out, entry)
+	}
+	if lo, closed, ok := removed.LowerBound(); ok {
+		left := rangeset.AtMost(lo)
+		if closed {
+			left = rangeset.LessThan(lo)
+		}
+		if part, ok := entry.Range.Intersection(left); ok {
 			out = append(out, Entry[K, V]{Range: part, Value: entry.Value})
 		}
 	}
-	m.entries = out
+	if hi, closed, ok := removed.UpperBound(); ok {
+		right := rangeset.AtLeast(hi)
+		if closed {
+			right = rangeset.GreaterThan(hi)
+		}
+		if part, ok := entry.Range.Intersection(right); ok {
+			out = append(out, Entry[K, V]{Range: part, Value: entry.Value})
+		}
+	}
+	return out
 }
 
 // SubRangeMap returns a detached map containing only mappings within r.

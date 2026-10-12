@@ -13,7 +13,7 @@ import (
 )
 
 func TestSet(t *testing.T) {
-	s := concurrent.NewSet(1, 2, 3)
+	s := concurrent.NewHashSet(1, 2, 3)
 	require.Equal(t, 3, s.Len())
 
 	require.False(t, s.Add(3), "re-adding must report false")
@@ -41,7 +41,7 @@ func TestSet(t *testing.T) {
 
 func TestSetConcurrent(t *testing.T) {
 	const goroutines, perGoroutine = 8, 500
-	s := concurrent.NewSetWithCapacity[int](goroutines * perGoroutine)
+	s := concurrent.NewHashSetWithCapacity[int](goroutines * perGoroutine)
 
 	var wg sync.WaitGroup
 	for g := range goroutines {
@@ -73,7 +73,7 @@ func TestSetConcurrent(t *testing.T) {
 }
 
 func TestMap(t *testing.T) {
-	m := concurrent.NewMapWithCapacity[string, int](4)
+	m := concurrent.NewHashMapWithCapacity[string, int](4)
 	require.Zero(t, m.Len())
 
 	old, existed := m.Put("a", 1)
@@ -114,7 +114,7 @@ func TestMap(t *testing.T) {
 }
 
 func TestMapGetOrPut(t *testing.T) {
-	m := concurrent.NewMap[string, int]()
+	m := concurrent.NewHashMap[string, int]()
 	calls := 0
 
 	v, loaded := m.GetOrPut("k", func() int { calls++; return 1 })
@@ -129,7 +129,7 @@ func TestMapGetOrPut(t *testing.T) {
 }
 
 func TestMapGetOrPutConcurrent(t *testing.T) {
-	m := concurrent.NewMap[int, int]()
+	m := concurrent.NewHashMap[int, int]()
 	const goroutines = 16
 
 	var (
@@ -159,7 +159,7 @@ func TestMapGetOrPutConcurrent(t *testing.T) {
 }
 
 func TestSkipList(t *testing.T) {
-	sl := concurrent.NewSkipList[int, string]()
+	sl := concurrent.NewSkipListMap[int, string]()
 	sl.Put(30, "c")
 	sl.Put(10, "a")
 	sl.Put(20, "b")
@@ -214,7 +214,7 @@ func TestSkipList(t *testing.T) {
 }
 
 func TestSkipListCustomComparatorConcurrent(t *testing.T) {
-	sl := concurrent.NewSkipListFunc[string, int](func(a, b string) int { return -strings.Compare(a, b) })
+	sl := concurrent.NewSkipListMapFunc[string, int](func(a, b string) int { return -strings.Compare(a, b) })
 	sl.Put("a", 1)
 	sl.Put("c", 3)
 

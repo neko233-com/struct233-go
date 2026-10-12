@@ -4,7 +4,7 @@ Common data structures for Go, modeled after the JDK collection framework
 (`java.util` / `java.util.concurrent`). Java ships a rich toolbox of
 collections; this library brings the same vocabulary to Go with generics.
 
-- **One entry point** — `struct233.NewSet`, `struct233.NewSkipList`,
+- **One entry point** — `struct233.NewHashSet`, `struct233.NewSkipListMap`,
   `struct233.NewConcurrentLRU`, …
 - **High performance, low memory** — zero-allocation read paths, no per-write
   scratch allocations (see [Performance](#performance)).
@@ -23,15 +23,14 @@ collections; this library brings the same vocabulary to Go with generics.
 
 | Facade alias         | Package       | JDK analog                                                   |
 | -------------------- | ------------- | ------------------------------------------------------------ |
-| `Set`                | `set`         | `HashSet`                                                    |
-| `LinkedSet`          | `set`         | `LinkedHashSet` (insertion order)                            |
-| `SortedSet`          | `set`         | `TreeSet` (NavigableSet semantics)                           |
-| `SkipList`           | `skiplist`    | `ConcurrentSkipListMap` / `TreeMap` (NavigableMap semantics)  |
-| `TreeMap`            | `skiplist`    | `TreeMap` (alias of `SkipList`)                              |
-| `LinkedMap`          | `linkedmap`   | `LinkedHashMap` (insertion order)                            |
+| `HashSet`                | `set`         | `HashSet`                                                    |
+| `LinkedHashSet`          | `set`         | `LinkedHashSet` (insertion order)                            |
+| `SkipListSet`          | `set`         | `TreeSet` (NavigableSet semantics)                           |
+| `SkipListMap`           | `skiplist`    | `ConcurrentSkipListMap` / `TreeMap` (NavigableMap semantics)  |
+| `LinkedHashMap`          | `linkedmap`   | `LinkedHashMap` (insertion order)                            |
 | `BiMap`              | `bidimap`     | Guava `BiMap` (bidirectional map, live inverse view)         |
-| `PriorityQueue`      | `pqueue`      | `PriorityQueue` (binary heap)                                |
-| `Deque`              | `deque`       | `ArrayDeque` (FIFO queue + LIFO stack)                       |
+| `HeapPriorityQueue`      | `pqueue`      | `PriorityQueue` (binary heap)                                |
+| `ArrayDeque`              | `deque`       | `ArrayDeque` (FIFO queue + LIFO stack)                       |
 | `RingBuffer`         | `ringbuffer`  | — (keep-newest-N buffer)                                     |
 | `BitSet`             | `bitset`      | `BitSet` (bit vector)                                        |
 | `BloomFilter`        | `bloomfilter` | — (probabilistic membership, no false negatives)             |
@@ -41,12 +40,12 @@ collections; this library brings the same vocabulary to Go with generics.
 | `RangeMap`           | `rangemap`   | Guava `RangeMap` (disjoint intervals mapped to values)         |
 | `LRU`                | `lru`         | `LinkedHashMap(accessOrder=true)` + `removeEldestEntry`      |
 | `TTLCache`           | `ttlcache`    | — (LRU + per-entry expiry, goroutine-safe)                   |
-| `ConcurrentSet`      | `concurrent`  | `ConcurrentHashMap` key set / synchronized `HashSet`         |
-| `ConcurrentMap`      | `concurrent`  | `ConcurrentHashMap` (atomic `GetOrPut`)                      |
-| `ConcurrentSkipList` | `concurrent`  | `ConcurrentSkipListMap`                                      |
+| `ConcurrentHashSet`      | `concurrent`  | `ConcurrentHashMap` key set / synchronized `HashSet`         |
+| `ConcurrentHashMap`      | `concurrent`  | `ConcurrentHashMap` (atomic `GetOrPut`)                      |
+| `ConcurrentSkipListMap` | `concurrent`  | `ConcurrentSkipListMap`                                      |
 | `ConcurrentLRU`      | `concurrent`  | synchronized LRU cache                                       |
-| `ConcurrentQueue`    | `concurrent`  | `ArrayBlockingQueue` (bounded, blocking)                     |
-| `ConcurrentPriorityQueue` | `concurrent` | `PriorityBlockingQueue` (blocking, priority-ordered)     |
+| `ArrayBlockingQueue`    | `concurrent`  | `ArrayBlockingQueue` (bounded, blocking)                     |
+| `HeapBlockingPriorityQueue` | `concurrent` | `PriorityBlockingQueue` (blocking, priority-ordered)     |
 
 ## Utilities
 
@@ -60,7 +59,7 @@ usually surrounded by.
 | `UUIDGenerator`       | `uuid`       | strictly increasing v7 UUIDs, injectable clock                  |
 | `Snowflake`           | `snowflake`  | 64-bit time-ordered IDs without a coordinator                   |
 | `WorkerPool`          | `workerpool` | fixed goroutine pool with backpressure, metrics, panic safety   |
-| `RateLimiter`         | `ratelimit`  | token bucket (`Allow` / `Reserve` / `Wait`), injectable clock    |
+| `TokenBucketLimiter`         | `ratelimit`  | token bucket (`Allow` / `Reserve` / `Wait`), injectable clock    |
 | `SlidingWindowLimiter`| `ratelimit`  | exact "N events per window" counter (`Remaining`/`RetryAfter`)  |
 | `DelayQueue`          | `delayqueue` | `DelayQueue`: elements become takeable at their deadline         |
 | `Semaphore`           | `semaphore`  | weighted `Semaphore` with context-aware acquire                  |
@@ -88,10 +87,67 @@ usually surrounded by.
 ## Install
 
 ```
-go get github.com/neko233-com/struct233-go@v0.2.0
+go get github.com/neko233-com/struct233-go@v0.4.0
 ```
 
 Requires Go 1.24+ (generic type aliases and range-over-func iterators).
+
+## Set interfaces and concrete implementations
+
+`Set[T]` is an interface, not a hash-set alias. Constructors name the actual
+storage style and return concrete types; accept the interface where business
+code only needs common set operations.
+
+```go
+var ids struct233.Set[int64] = struct233.NewHashSet[int64]()
+ids.AddAll(10, 20, 10)
+ids.ContainsAll(10, 20) // true
+
+var ordered struct233.NavigableSet[int] = struct233.NewSkipListSet(30, 10, 20)
+ordered.Ceiling(15) // 20, true
+
+insertionOrder := struct233.NewLinkedHashSet(3, 1, 2)
+shared := struct233.NewConcurrentHashSet(1, 2)
+common := insertionOrder.Equal(shared) // false: membership, not order
+_ = common
+```
+
+| Constructor | Order | Synchronization |
+| --- | --- | --- |
+| `NewHashSet` / `NewHashSetWithCapacity` | Unspecified | Caller owns access |
+| `NewLinkedHashSet` / `NewLinkedHashSetWithCapacity` | Insertion order | Caller owns access |
+| `NewSkipListSet` / `NewSkipListSetFunc` | Comparator order | Caller owns access |
+| `NewConcurrentHashSet` / `NewConcurrentHashSetWithCapacity` | Snapshot, unspecified | Internal locks |
+
+All four implement `Add`, `AddAll`, `Remove`, `Contains`, `ContainsAll`, `Len`,
+`IsEmpty`, `Clear`, `All` and `ToSlice`. `NavigableSet` adds ordered boundary
+and range queries. Hash/skip-list set algebra accepts other `Set` implementations;
+both operands must use compatible element equality. A series of operations on
+a concurrent set is not one atomic transaction.
+
+Version 0.4.0 intentionally removes ambiguous constructors and concrete aliases.
+There are no deprecated compatibility wrappers. See
+[MIGRATION.md](MIGRATION.md) for the full naming changes.
+
+### Measured changes in v0.4.0
+
+The following short microbenchmarks compare v0.3.0 with this release on the same
+Windows/amd64 Ryzen 9 9950X machine using Go 1.27.0. They are local measurements,
+not production latency guarantees. Range benchmarks used 100 ms runs; UUID
+benchmarks used three 200 ms runs (medians below).
+
+| Operation | v0.3.0 | v0.4.0 |
+| --- | ---: | ---: |
+| RangeSet Union | 54.9 μs | 2.10 μs |
+| RangeSet Intersection | 24.3 μs | 2.25 μs |
+| RangeSet Complement | 296 μs | 13.4 μs |
+| RangeMap PutSplit | 78.6 μs / 3798 allocs | 10.4 μs / 1 alloc |
+| UUID NewV4, sequential | 67.04 ns / 0 allocs | 16.13 ns / 0 allocs |
+| UUID NewV7, sequential | 72.57 ns / 0 allocs | 29.07 ns / 0 allocs |
+
+Multiset `TotalCount` is now a maintained O(1) count instead of a map scan.
+Concurrent UUID throughput depends on contention on the shared entropy buffer;
+the sequential figures above do not establish a parallel throughput gain.
 
 ## Usage
 
@@ -100,18 +156,18 @@ Everything is reachable from the root package:
 ```go
 import "github.com/neko233-com/struct233-go"
 
-s := struct233.NewSet(1, 2, 3)
+s := struct233.NewHashSet(1, 2, 3)
 s.Add(4)
-s.Union(struct233.NewSet(5))        // {1, 2, 3, 4, 5}
-s.Intersection(struct233.NewSet(2)) // {2}
+s.Union(struct233.NewHashSet(5))        // {1, 2, 3, 4, 5}
+s.Intersection(struct233.NewHashSet(2)) // {2}
 
-sorted := struct233.NewSortedSet(50, 10, 30)
+sorted := struct233.NewSkipListSet(50, 10, 30)
 sorted.Ceiling(20) // 30
 sorted.Higher(30)  // 50
 
-ordered := struct233.NewLinkedSet("a", "b", "c") // iteration: a, b, c
+ordered := struct233.NewLinkedHashSet("a", "b", "c") // iteration: a, b, c
 
-sl := struct233.NewSkipList[int, string]()
+sl := struct233.NewSkipListMap[int, string]()
 sl.Put(30, "c")
 sl.Put(10, "a")
 if k, v, ok := sl.Floor(25); ok { // greatest key <= 25
@@ -121,17 +177,17 @@ for k, v := range sl.Range(10, 30, true, false) { // [10, 30)
     fmt.Println(k, v)
 }
 
-lm := struct233.NewLinkedMap[string, int]() // java.util.LinkedHashMap
+lm := struct233.NewLinkedHashMap[string, int]() // java.util.LinkedHashMap
 lm.Put("b", 1)
 lm.Put("a", 2)
 lm.Keys() // [b a]
 
-q := struct233.NewPriorityQueue[int]()   // min-heap on natural order
+q := struct233.NewHeapPriorityQueue[int]()   // min-heap on natural order
 q.Push(3)
 v, _ := q.Pop()                          // 3 -> 1 after pushing 1
-maxQ := struct233.NewPriorityQueueFunc(func(a, b int) int { return b - a })
+maxQ := struct233.NewHeapPriorityQueueFunc(func(a, b int) int { return b - a })
 
-d := struct233.NewDeque[int]()
+d := struct233.NewArrayDeque[int]()
 d.PushBack(2)  // queue: offer
 d.PushFront(1)
 d.PopFront()   // 1 (queue: poll)
@@ -181,8 +237,8 @@ prices.Entries()                          // [1,4), [4,7), [7,10]
 
 The `struct233` types are **aliases** of the implementations in the
 subpackages, so the facade adds no indirection and the advanced API stays
-available. For custom ordering use `NewSortedSetFunc`, `NewSkipListFunc` /
-`NewTreeMapFunc`, `NewPriorityQueueFunc`, `NewConcurrentSkipListFunc`;
+available. For custom ordering use `NewSkipListSetFunc`, `NewSkipListMapFunc` /
+`NewHeapPriorityQueueFunc`, `NewConcurrentSkipListMapFunc`;
 `struct233.Comparator[K]` documents the comparator contract (negative / zero /
 positive, same as `java.util.Comparator`).
 
@@ -224,7 +280,7 @@ The plain containers are unsynchronized (like `java.util`). Share state across
 goroutines with the `Concurrent*` types:
 
 ```go
-ranking := struct233.NewConcurrentSkipList[int64, string]() // score -> player
+ranking := struct233.NewConcurrentSkipListMap[int64, string]() // score -> player
 ranking.Put(1200, "p1")
 ranking.Put(1500, "p2")
 top, name, _ := ranking.Last() // 1500 p2
@@ -232,23 +288,23 @@ for score, player := range ranking.Range(1000, 2000, true, true) {
     fmt.Println(score, player)
 }
 
-seen := struct233.NewConcurrentSetWithCapacity[int64](1 << 16)
+seen := struct233.NewConcurrentHashSetWithCapacity[int64](1 << 16)
 if seen.Add(uid) { /* first time */ }
 
-sessions := struct233.NewConcurrentMapWithCapacity[int64, *Session](1024)
+sessions := struct233.NewConcurrentHashMapWithCapacity[int64, *Session](1024)
 sess, _ := sessions.GetOrPut(uid, func() *Session { return newSession(uid) }) // atomic
 
 sessCache := struct233.NewConcurrentLRU[int64, *Session](4096)
 
 // bounded blocking queue: producers block when full, consumers when empty
-jobs := struct233.NewConcurrentQueue[Job](1024)
+jobs := struct233.NewArrayBlockingQueue[Job](1024)
 go func() { jobs.Put(job) }()                    // blocks while full
 if job, ok := jobs.Poll(50 * time.Millisecond); ok { handle(job) }
 jobs.Close()                                     // unblocks every waiter
 
 // blocking priority queue (PriorityBlockingQueue): head is the smallest
 // element per the comparator, equal elements leave FIFO
-tasks := struct233.NewConcurrentPriorityQueue(func(a, b Task) int { return a.Deadline.Compare(b.Deadline) })
+tasks := struct233.NewHeapBlockingPriorityQueue(func(a, b Task) int { return a.Deadline.Compare(b.Deadline) })
 tasks.Put(task)                                  // blocks while a bounded queue is full
 t, ok := tasks.Take()                            // blocks while empty
 ```
@@ -262,10 +318,10 @@ taken under the lock, so ranging never blocks writers.
 When the element count is known up front, skip the rehashing:
 
 ```go
-s := struct233.NewSetWithCapacity[int](1024)          // map pre-sized for 1024 keys
-m := struct233.NewConcurrentMapWithCapacity[int64, *Session](4096)
-q := struct233.NewPriorityQueueFromSlice(items, cmp)  // O(n) heapify
-d := struct233.NewDeque[int](4096)                    // pre-allocated ring buffer
+s := struct233.NewHashSetWithCapacity[int](1024)          // map pre-sized for 1024 keys
+m := struct233.NewConcurrentHashMapWithCapacity[int64, *Session](4096)
+q := struct233.NewHeapPriorityQueueFromSlice(items, cmp)  // O(n) heapify
+d := struct233.NewArrayDeque[int](4096)                    // pre-allocated ring buffer
 ```
 
 ### Reuse, identity and bounded concurrency
@@ -307,7 +363,7 @@ jobs.SubmitWait(func() { handle() })          // waits for the task to finish
 jobs.Metrics().Completed                      // counters, queue depth, active workers
 
 // ratelimit: token bucket per client, per endpoint, per anything
-limit := struct233.NewRateLimiter(100, 10)    // 100 events/s, bursts of 10
+limit := struct233.NewTokenBucketLimiter(100, 10)    // 100 events/s, bursts of 10
 if limit.Allow() {
     serve()
 }
@@ -428,7 +484,7 @@ struct233.FNV1a64([]byte("user:42"))
 
 // order: comparator combinators that plug straight into the containers
 byScoreDesc := struct233.Reverse(struct233.Natural[int]())
-leaderboard := struct233.NewSortedSetFunc(byScoreDesc, 10, 30, 20) // 30, 20, 10
+leaderboard := struct233.NewSkipListSetFunc(byScoreDesc, 10, 30, 20) // 30, 20, 10
 byNameThenAge := struct233.Then(
     struct233.ByKey(func(p Player) string { return p.Name }, struct233.Natural[string]()),
     struct233.ByKey(func(p Player) int { return p.Age }, struct233.Natural[int]()),
@@ -455,46 +511,46 @@ Windows, Go 1.27 (`B/op` = bytes allocated per operation):
 | `BitSet.Get`                         | 0.58  | 0     | 0         |
 | `RingBuffer.Push` (with eviction)    | 0.79  | 0     | 0         |
 | `BitSet.Set`                         | 0.82  | 0     | 0         |
-| `PriorityQueue.Pop`                  | 0.86  | 0     | 0         |
+| `HeapPriorityQueue.Pop`                  | 0.86  | 0     | 0         |
 | `UnionFind.Find`                     | 0.94  | 0     | 0         |
-| `Deque.PushFront` + `PopBack`        | 1.66  | 0     | 0         |
+| `ArrayDeque.PushFront` + `PopBack`        | 1.66  | 0     | 0         |
 | `UnionFind.Union`                    | 1.98  | 0     | 0         |
-| `Deque.PushBack` + `PopFront`        | 2.10  | 0     | 0         |
+| `ArrayDeque.PushBack` + `PopFront`        | 2.10  | 0     | 0         |
 | `HashSet.Contains`                   | 3.63  | 0     | 0         |
-| `Deque.PushBack`                     | 3.70  | 0     | 0         |
-| `LinkedMap.Get`                      | 4.07  | 0     | 0         |
+| `ArrayDeque.PushBack`                     | 3.70  | 0     | 0         |
+| `LinkedHashMap.Get`                      | 4.07  | 0     | 0         |
 | `LRU.Peek`                           | 4.49  | 0     | 0         |
-| `LinkedMap.Put` (update)             | 4.90  | 0     | 0         |
-| `PriorityQueue.Push`                 | 8.51  | 46    | 0         |
+| `LinkedHashMap.Put` (update)             | 4.90  | 0     | 0         |
+| `HeapPriorityQueue.Push`                 | 8.51  | 46    | 0         |
 | `LRU.Get` (promotes)                 | 8.84  | 0     | 0         |
 | `BloomFilter.TestUint64`             | 8.38  | 0     | 0         |
 | `LRU.Put` (update)                   | 11.28 | 0     | 0         |
 | `BitSet.Cardinality` (4k bits)       | 23.31 | 0     | 0         |
 | `BloomFilter.AddString`              | 23.61 | 0     | 0         |
 | `BitSet.Or`                          | 29.12 | 0     | 0         |
-| `PriorityQueue.Push` + `Pop`         | 30.67 | 0     | 0         |
+| `HeapPriorityQueue.Push` + `Pop`         | 30.67 | 0     | 0         |
 | `LinkedHashSet.Add`                  | 81.32 | 78    | 1         |
-| `LinkedMap.Put` (insert)             | 104.9 | 107   | 1         |
-| `SkipList.Get`                       | 134.2 | 0     | 0         |
+| `LinkedHashMap.Put` (insert)             | 104.9 | 107   | 1         |
+| `SkipListMap.Get`                       | 134.2 | 0     | 0         |
 | `TreeSet.Add`                        | 140.7 | 42    | 2         |
-| `SkipList.Put`                       | 154.6 | 58    | 2         |
+| `SkipListMap.Put`                       | 154.6 | 58    | 2         |
 | `LRU.Put` (insert + evict)           | 59.52 | 32    | 1         |
-| `SkipList.Range` (1k keys)           | 2499  | 0     | 0         |
-| `PriorityQueue.NewFromSlice` (1024)  | 3899  | 8224  | 2         |
+| `SkipListMap.Range` (1k keys)           | 2499  | 0     | 0         |
+| `HeapPriorityQueue.NewFromSlice` (1024)  | 3899  | 8224  | 2         |
 | `HashSet.Union` (512 + 512)          | 18002 | 37000 | 7         |
 
 Goroutine-safe containers, all zero-allocation:
 
 | Operation                                     | ns/op (32 threads) |
 | --------------------------------------------- | ------------------ |
-| `ConcurrentSkipList.Get`                      | 23.6               |
-| `ConcurrentMap.Get`                           | 26.7               |
-| `ConcurrentSet.Contains`                      | 28.4               |
+| `ConcurrentSkipListMap.Get`                      | 23.6               |
+| `ConcurrentHashMap.Get`                           | 26.7               |
+| `ConcurrentHashSet.Contains`                      | 28.4               |
 | `ConcurrentLRU.Get`                           | 56.4               |
-| `ConcurrentSet.Add`                           | 63.5               |
+| `ConcurrentHashSet.Add`                           | 63.5               |
 | `TTLCache.Get` (mutex, incl. expiry check)    | 21.2               |
 | `TTLCache.Put` (update)                       | 21.9               |
-| `ConcurrentQueue.Put` + `Take`                | 20.9               |
+| `ArrayBlockingQueue.Put` + `Take`                | 20.9               |
 
 Allocation design (asserted by tests such as `TestReadPathsDoNotAllocate`,
 `TestPushPopDoesNotAllocate`, `TestReadsDoNotAllocate`,

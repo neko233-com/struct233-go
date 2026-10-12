@@ -32,7 +32,13 @@ const pollInterval = time.Millisecond
 type Element[T any] struct {
 	value    T
 	deadline time.Time
-	seq      uint64 // insertion order, breaks deadline ties (FIFO)
+}
+
+// entry owns the insertion order for one Put. Elements are immutable and may
+// be queued repeatedly or shared by independent queues without a data race.
+type entry[T any] struct {
+	element *Element[T]
+	seq     uint64
 }
 
 // NewElement wraps value with the deadline at which it becomes available.
@@ -57,7 +63,7 @@ func (e *Element[T]) Delay(now time.Time) time.Duration { return e.deadline.Sub(
 type Queue[T any] struct {
 	mu       sync.Mutex
 	notEmpty *sync.Cond
-	items    []*Element[T] // min-heap on deadline
+	items    []entry[T] // min-heap on deadline
 	now      func() time.Time
 	polling  bool // the clock is injected, so blocking waits poll
 	closed   bool
@@ -98,8 +104,7 @@ func (q *Queue[T]) Put(e *Element[T]) bool {
 		return false
 	}
 	q.seq++
-	e.seq = q.seq
-	q.pushLocked(e)
+	q.pushLocked(entry[T]{element: e, seq: q.seq})
 	q.notEmpty.Broadcast() // a new earliest element must wake blocked takers
 	return true
 }
@@ -166,7 +171,7 @@ func (q *Queue[T]) Peek() (*Element[T], bool) {
 	if len(q.items) == 0 {
 		return nil, false
 	}
-	return q.items[0], true
+	return q.items[0].element, true
 }
 
 // Len returns how many elements are queued, due or not.
@@ -229,7 +234,7 @@ func (q *Queue[T]) remainingLocked() time.Duration {
 	if q.polling || len(q.items) == 0 {
 		return 0
 	}
-	if d := q.items[0].Delay(q.now()); d > 0 {
+	if d := q.items[0].element.Delay(q.now()); d > 0 {
 		return d
 	}
 	return 0
@@ -238,7 +243,7 @@ func (q *Queue[T]) remainingLocked() time.Duration {
 // popDueLocked removes and returns the earliest element when it is due.
 // The caller must hold the mutex.
 func (q *Queue[T]) popDueLocked() *Element[T] {
-	if len(q.items) == 0 || !q.items[0].Expired(q.now()) {
+	if len(q.items) == 0 || !q.items[0].element.Expired(q.now()) {
 		return nil
 	}
 	return q.popLocked()
@@ -276,7 +281,7 @@ func (q *Queue[T]) condWaitLocked(d time.Duration) {
 }
 
 // pushLocked inserts e into the min-heap.
-func (q *Queue[T]) pushLocked(e *Element[T]) {
+func (q *Queue[T]) pushLocked(e entry[T]) {
 	q.items = append(q.items, e)
 	i := len(q.items) - 1
 	for i > 0 {
@@ -294,7 +299,7 @@ func (q *Queue[T]) popLocked() *Element[T] {
 	n := len(q.items) - 1
 	q.items[0], q.items[n] = q.items[n], q.items[0]
 	top := q.items[n]
-	q.items[n] = nil // do not pin the element
+	q.items[n] = entry[T]{} // do not pin the element
 	q.items = q.items[:n]
 
 	for i := 0; ; {
@@ -312,14 +317,14 @@ func (q *Queue[T]) popLocked() *Element[T] {
 		q.items[i], q.items[smallest] = q.items[smallest], q.items[i]
 		i = smallest
 	}
-	return top
+	return top.element
 }
 
 // lessLocked orders elements by deadline, then by insertion order so that equal
 // deadlines keep FIFO order.
-func (q *Queue[T]) lessLocked(a, b *Element[T]) bool {
-	if a.deadline.Equal(b.deadline) {
+func (q *Queue[T]) lessLocked(a, b entry[T]) bool {
+	if a.element.deadline.Equal(b.element.deadline) {
 		return a.seq < b.seq
 	}
-	return a.deadline.Before(b.deadline)
+	return a.element.deadline.Before(b.element.deadline)
 }

@@ -7,7 +7,7 @@ import (
 )
 
 func BenchmarkPriorityQueuePushPop(b *testing.B) {
-	q := concurrent.NewPriorityQueue[int](func(a, b int) int { return a - b })
+	q := concurrent.NewHeapBlockingPriorityQueue[int](func(a, b int) int { return a - b })
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -18,7 +18,7 @@ func BenchmarkPriorityQueuePushPop(b *testing.B) {
 }
 
 func BenchmarkPriorityQueuePeek(b *testing.B) {
-	q := concurrent.NewPriorityQueue[int](func(a, b int) int { return a - b })
+	q := concurrent.NewHeapBlockingPriorityQueue[int](func(a, b int) int { return a - b })
 	q.Put(1)
 	q.Put(2)
 	q.Put(3)

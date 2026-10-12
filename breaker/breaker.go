@@ -115,7 +115,9 @@ type Counts struct {
 //
 // A caller that was admitted by Allow must report exactly one outcome with
 // Success or Failure; a half-open probe that reports neither keeps its slot
-// spent. Execute does that bookkeeping for the caller.
+// spent. Manual outcomes apply to the current state because they carry no call
+// identity. Use Execute when calls may overlap state transitions or Reset: it
+// discards outcomes belonging to an earlier circuit generation.
 type Breaker struct {
 	mu sync.Mutex
 
@@ -129,6 +131,7 @@ type Breaker struct {
 	openedAt         time.Time // clock reading of the transition to open
 	halfOpenInFlight int       // admitted probes that have not reported yet
 	counts           Counts
+	generation       uint64 // changes whenever the circuit changes state or resets
 }
 
 // New creates a breaker with the default settings. It panics on invalid options.
@@ -170,7 +173,10 @@ func New(opts ...Option) *Breaker {
 func (b *Breaker) Allow() bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	return b.allowLocked()
+}
 
+func (b *Breaker) allowLocked() bool {
 	b.enterHalfOpen()
 	switch b.state {
 	case StateOpen:
@@ -194,7 +200,10 @@ func (b *Breaker) Allow() bool {
 func (b *Breaker) Success() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.successLocked()
+}
 
+func (b *Breaker) successLocked() {
 	b.counts.Successes++
 	b.counts.ConsecutiveFailures = 0
 	if b.state != StateHalfOpen {
@@ -206,6 +215,7 @@ func (b *Breaker) Success() {
 	b.counts.ConsecutiveSuccesses++
 	if b.counts.ConsecutiveSuccesses >= b.successThreshold {
 		b.state = StateClosed
+		b.generation++
 		b.halfOpenInFlight = 0
 	}
 }
@@ -215,7 +225,10 @@ func (b *Breaker) Success() {
 func (b *Breaker) Failure() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.failureLocked()
+}
 
+func (b *Breaker) failureLocked() {
 	b.counts.Failures++
 	b.counts.ConsecutiveFailures++
 	b.counts.ConsecutiveSuccesses = 0
@@ -233,18 +246,39 @@ func (b *Breaker) Failure() {
 }
 
 // Execute calls Allow, runs fn when allowed and records the outcome. It
-// returns ErrOpen without calling fn while the circuit is open.
-func (b *Breaker) Execute(fn func() error) error {
-	if !b.Allow() {
+// returns ErrOpen without calling fn while the circuit is open. A panic in fn
+// is recorded as a failure and propagates to the caller. Outcomes from calls
+// admitted before a state transition or Reset do not affect the new generation.
+func (b *Breaker) Execute(fn func() error) (err error) {
+	allowed, generation := b.admit()
+	if !allowed {
 		return ErrOpen
 	}
-	err := fn()
-	if err != nil {
-		b.Failure()
-		return err
-	}
-	b.Success()
-	return nil
+	completed := false
+	defer func() {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		if generation != b.generation {
+			return
+		}
+		if completed && err == nil {
+			b.successLocked()
+		} else {
+			b.failureLocked()
+		}
+	}()
+	err = fn()
+	completed = true
+	return err
+}
+
+// admit snapshots the generation after admission, including any transition to
+// half-open. The deferred unlock also covers a panic from the injected clock.
+func (b *Breaker) admit() (bool, uint64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	allowed := b.allowLocked()
+	return allowed, b.generation
 }
 
 // State returns the current state, transitioning open -> half-open once the
@@ -271,6 +305,7 @@ func (b *Breaker) Reset() {
 	defer b.mu.Unlock()
 
 	b.state = StateClosed
+	b.generation++
 	b.openedAt = time.Time{}
 	b.halfOpenInFlight = 0
 	b.counts = Counts{}
@@ -283,6 +318,7 @@ func (b *Breaker) enterHalfOpen() {
 		return
 	}
 	b.state = StateHalfOpen
+	b.generation++
 	b.halfOpenInFlight = 0
 	b.counts.ConsecutiveSuccesses = 0
 }
@@ -290,6 +326,7 @@ func (b *Breaker) enterHalfOpen() {
 // open starts a fresh cooldown window. The caller must hold the mutex.
 func (b *Breaker) open() {
 	b.state = StateOpen
+	b.generation++
 	b.openedAt = b.now()
 	b.halfOpenInFlight = 0
 	b.counts.ConsecutiveSuccesses = 0

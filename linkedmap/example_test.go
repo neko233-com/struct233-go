@@ -6,7 +6,7 @@ import (
 	"github.com/neko233-com/struct233-go/linkedmap"
 )
 
-func ExampleMap() {
+func ExampleLinkedHashMap() {
 	m := linkedmap.New[string, int]()
 	m.Put("b", 2)
 	m.Put("a", 1)
@@ -18,7 +18,7 @@ func ExampleMap() {
 	// [2 1 3]
 }
 
-func ExampleMap_Put() {
+func ExampleLinkedHashMap_Put() {
 	m := linkedmap.New[string, int]()
 	m.Put("a", 1)
 	m.Put("b", 2)
@@ -32,7 +32,7 @@ func ExampleMap_Put() {
 	// 10 true
 }
 
-func ExampleMap_Remove() {
+func ExampleLinkedHashMap_Remove() {
 	m := linkedmap.New[string, int]()
 	m.Put("a", 1)
 	m.Put("b", 2)
@@ -45,7 +45,7 @@ func ExampleMap_Remove() {
 	// [a c b]
 }
 
-func ExampleMap_First() {
+func ExampleLinkedHashMap_First() {
 	m := linkedmap.New[string, int]()
 	m.Put("first", 1)
 	m.Put("last", 2)
@@ -58,7 +58,7 @@ func ExampleMap_First() {
 	// false
 }
 
-func ExampleMap_All() {
+func ExampleLinkedHashMap_All() {
 	m := linkedmap.New[int, string]()
 	m.Put(2, "b")
 	m.Put(1, "a")

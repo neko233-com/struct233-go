@@ -111,12 +111,12 @@ func newSupplier[T any](fn func() T, ttl time.Duration, opts []Option) *Supplier
 // reaches the caller and the next Get retries.
 func (s *Supplier[T]) Get() T {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.freshLocked() {
 		s.hits.Add(1)
-		v := s.value
-		s.mu.Unlock()
-		return v
+		return s.value
 	}
+	s.invalidateLocked()
 	return s.computeLocked()
 }
 
@@ -134,17 +134,16 @@ func (s *Supplier[T]) freshLocked() bool {
 	return s.now().Before(s.expiresAt)
 }
 
-// computeLocked runs fn and caches its result. s.mu must be held on entry; the
-// mutex is released even when fn panics, in which case nothing is cached.
+// computeLocked runs fn and caches its result. s.mu must be held. Publish only
+// after both the function and clock succeed, so a panic leaves nothing cached.
 func (s *Supplier[T]) computeLocked() T {
-	defer s.mu.Unlock()
 	s.misses.Add(1)
 	v := s.fn()
-	s.value = v
-	s.computed = true
+	var expiresAt time.Time
 	if s.ttl > 0 {
-		s.expiresAt = s.now().Add(s.ttl)
+		expiresAt = s.now().Add(s.ttl)
 	}
+	s.value, s.expiresAt, s.computed = v, expiresAt, true
 	return v
 }
 
@@ -153,9 +152,15 @@ func (s *Supplier[T]) computeLocked() T {
 // keeping "the next Get recomputes" true even under concurrency.
 func (s *Supplier[T]) Invalidate() {
 	s.mu.Lock()
+	s.invalidateLocked()
+	s.mu.Unlock()
+}
+
+func (s *Supplier[T]) invalidateLocked() {
+	var zero T
+	s.value = zero
 	s.computed = false
 	s.expiresAt = time.Time{}
-	s.mu.Unlock()
 }
 
 // Stats returns a snapshot of the hit/miss counters.

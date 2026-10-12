@@ -17,42 +17,57 @@ import (
 	"github.com/neko233-com/struct233-go/skiplist"
 )
 
-// Set is a goroutine-safe unordered set, similar to a synchronized
+// HashSet is a goroutine-safe unordered set, similar to a synchronized
 // java.util.HashSet / ConcurrentHashMap-based key set.
-type Set[T comparable] struct {
+// The zero value is an empty set ready for use.
+type HashSet[T comparable] struct {
 	mu sync.RWMutex
 	m  map[T]struct{}
 }
 
-// NewSet creates a Set pre-filled with items.
-func NewSet[T comparable](items ...T) *Set[T] {
-	s := NewSetWithCapacity[T](len(items))
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, item := range items {
-		s.m[item] = struct{}{}
-	}
+// NewHashSet creates a HashSet pre-filled with items.
+func NewHashSet[T comparable](items ...T) *HashSet[T] {
+	s := NewHashSetWithCapacity[T](len(items))
+	s.AddAll(items...)
 	return s
 }
 
-// NewSetWithCapacity creates an empty Set whose map is pre-sized.
-func NewSetWithCapacity[T comparable](capacity int) *Set[T] {
-	return &Set[T]{m: make(map[T]struct{}, capacity)}
+// NewHashSetWithCapacity creates an empty HashSet whose map is pre-sized.
+func NewHashSetWithCapacity[T comparable](capacity int) *HashSet[T] {
+	return &HashSet[T]{m: make(map[T]struct{}, capacity)}
 }
 
 // Add inserts item and reports whether it was newly added.
-func (s *Set[T]) Add(item T) bool {
+func (s *HashSet[T]) Add(item T) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.m[item]; ok {
 		return false
 	}
+	if s.m == nil {
+		s.m = make(map[T]struct{})
+	}
 	s.m[item] = struct{}{}
 	return true
 }
 
+// AddAll inserts every item atomically with respect to other set operations.
+func (s *HashSet[T]) AddAll(items ...T) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(items) == 0 {
+		return
+	}
+	if s.m == nil {
+		s.m = make(map[T]struct{}, len(items))
+	}
+	for _, item := range items {
+		s.m[item] = struct{}{}
+	}
+}
+
 // Remove deletes item and reports whether it existed.
-func (s *Set[T]) Remove(item T) bool {
+func (s *HashSet[T]) Remove(item T) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.m[item]; !ok {
@@ -63,29 +78,45 @@ func (s *Set[T]) Remove(item T) bool {
 }
 
 // Contains reports whether item is present.
-func (s *Set[T]) Contains(item T) bool {
+func (s *HashSet[T]) Contains(item T) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	_, ok := s.m[item]
 	return ok
 }
 
+// ContainsAll reports whether every item is present in one consistent snapshot.
+// An empty list of items always returns true.
+func (s *HashSet[T]) ContainsAll(items ...T) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, item := range items {
+		if _, ok := s.m[item]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
 // Len returns the number of elements.
-func (s *Set[T]) Len() int {
+func (s *HashSet[T]) Len() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return len(s.m)
 }
 
+// IsEmpty reports whether the set has no elements.
+func (s *HashSet[T]) IsEmpty() bool { return s.Len() == 0 }
+
 // Clear removes all elements.
-func (s *Set[T]) Clear() {
+func (s *HashSet[T]) Clear() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	clear(s.m)
 }
 
 // ToSlice returns a snapshot of the elements in unspecified order.
-func (s *Set[T]) ToSlice() []T {
+func (s *HashSet[T]) ToSlice() []T {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]T, 0, len(s.m))
@@ -96,7 +127,7 @@ func (s *Set[T]) ToSlice() []T {
 }
 
 // All iterates over a snapshot of the elements.
-func (s *Set[T]) All() iter.Seq[T] {
+func (s *HashSet[T]) All() iter.Seq[T] {
 	snapshot := s.ToSlice()
 	return func(yield func(T) bool) {
 		for _, item := range snapshot {
@@ -107,25 +138,25 @@ func (s *Set[T]) All() iter.Seq[T] {
 	}
 }
 
-// Map is a goroutine-safe map with an atomic GetOrPut,
+// HashMap is a goroutine-safe map with an atomic GetOrPut,
 // similar to java.util.concurrent.ConcurrentHashMap.
-type Map[K comparable, V any] struct {
+type HashMap[K comparable, V any] struct {
 	mu sync.RWMutex
 	m  map[K]V
 }
 
-// NewMap creates an empty Map.
-func NewMap[K comparable, V any]() *Map[K, V] {
-	return NewMapWithCapacity[K, V](0)
+// NewHashMap creates an empty HashMap.
+func NewHashMap[K comparable, V any]() *HashMap[K, V] {
+	return NewHashMapWithCapacity[K, V](0)
 }
 
-// NewMapWithCapacity creates an empty Map pre-sized for capacity entries.
-func NewMapWithCapacity[K comparable, V any](capacity int) *Map[K, V] {
-	return &Map[K, V]{m: make(map[K]V, capacity)}
+// NewHashMapWithCapacity creates an empty HashMap pre-sized for capacity entries.
+func NewHashMapWithCapacity[K comparable, V any](capacity int) *HashMap[K, V] {
+	return &HashMap[K, V]{m: make(map[K]V, capacity)}
 }
 
 // Get returns the value for key.
-func (m *Map[K, V]) Get(key K) (V, bool) {
+func (m *HashMap[K, V]) Get(key K) (V, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	v, ok := m.m[key]
@@ -133,7 +164,7 @@ func (m *Map[K, V]) Get(key K) (V, bool) {
 }
 
 // Put inserts or updates key, returning the previous value if present.
-func (m *Map[K, V]) Put(key K, value V) (old V, existed bool) {
+func (m *HashMap[K, V]) Put(key K, value V) (old V, existed bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	old, existed = m.m[key]
@@ -145,7 +176,8 @@ func (m *Map[K, V]) Put(key K, value V) (old V, existed bool) {
 // the key is absent. The whole operation is atomic, so fn runs at most once
 // per key even under concurrent callers; loaded reports whether the value was
 // already present.
-func (m *Map[K, V]) GetOrPut(key K, fn func() V) (value V, loaded bool) {
+// fn runs under the map's write lock and must not call methods on the same HashMap.
+func (m *HashMap[K, V]) GetOrPut(key K, fn func() V) (value V, loaded bool) {
 	m.mu.RLock()
 	if v, ok := m.m[key]; ok {
 		m.mu.RUnlock()
@@ -164,7 +196,7 @@ func (m *Map[K, V]) GetOrPut(key K, fn func() V) (value V, loaded bool) {
 }
 
 // Delete removes key and returns its previous value.
-func (m *Map[K, V]) Delete(key K) (old V, existed bool) {
+func (m *HashMap[K, V]) Delete(key K) (old V, existed bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	old, existed = m.m[key]
@@ -173,21 +205,21 @@ func (m *Map[K, V]) Delete(key K) (old V, existed bool) {
 }
 
 // Len returns the number of entries.
-func (m *Map[K, V]) Len() int {
+func (m *HashMap[K, V]) Len() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.m)
 }
 
 // Clear removes all entries.
-func (m *Map[K, V]) Clear() {
+func (m *HashMap[K, V]) Clear() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	clear(m.m)
 }
 
 // Keys returns a snapshot of the keys in unspecified order.
-func (m *Map[K, V]) Keys() []K {
+func (m *HashMap[K, V]) Keys() []K {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	out := make([]K, 0, len(m.m))
@@ -198,7 +230,7 @@ func (m *Map[K, V]) Keys() []K {
 }
 
 // Snapshot returns a copy of the current entries.
-func (m *Map[K, V]) Snapshot() map[K]V {
+func (m *HashMap[K, V]) Snapshot() map[K]V {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	out := make(map[K]V, len(m.m))
@@ -209,7 +241,7 @@ func (m *Map[K, V]) Snapshot() map[K]V {
 }
 
 // All iterates over a snapshot of the entries.
-func (m *Map[K, V]) All() iter.Seq2[K, V] {
+func (m *HashMap[K, V]) All() iter.Seq2[K, V] {
 	snapshot := m.Snapshot()
 	return func(yield func(K, V) bool) {
 		for k, v := range snapshot {
@@ -220,116 +252,116 @@ func (m *Map[K, V]) All() iter.Seq2[K, V] {
 	}
 }
 
-// SkipList is a goroutine-safe ordered map, the analog of
+// SkipListMap is a goroutine-safe ordered map, the analog of
 // java.util.concurrent.ConcurrentSkipListMap.
-type SkipList[K any, V any] struct {
+type SkipListMap[K any, V any] struct {
 	mu sync.RWMutex
-	sl *skiplist.SkipList[K, V]
+	sl *skiplist.SkipListMap[K, V]
 }
 
-// NewSkipList creates an ordered map using the natural ordering of K.
-func NewSkipList[K cmp.Ordered, V any]() *SkipList[K, V] {
-	return &SkipList[K, V]{sl: skiplist.New[K, V]()}
+// NewSkipListMap creates an ordered map using the natural ordering of K.
+func NewSkipListMap[K cmp.Ordered, V any]() *SkipListMap[K, V] {
+	return &SkipListMap[K, V]{sl: skiplist.New[K, V]()}
 }
 
-// NewSkipListFunc creates an ordered map using a custom comparator.
-func NewSkipListFunc[K any, V any](compare skiplist.Comparator[K]) *SkipList[K, V] {
-	return &SkipList[K, V]{sl: skiplist.NewFunc[K, V](compare)}
+// NewSkipListMapFunc creates an ordered map using a custom comparator.
+func NewSkipListMapFunc[K any, V any](compare skiplist.Comparator[K]) *SkipListMap[K, V] {
+	return &SkipListMap[K, V]{sl: skiplist.NewFunc[K, V](compare)}
 }
 
 // Put inserts or updates key, returning the previous value if present.
-func (s *SkipList[K, V]) Put(key K, val V) (old V, existed bool) {
+func (s *SkipListMap[K, V]) Put(key K, val V) (old V, existed bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.sl.Put(key, val)
 }
 
 // Get returns the value stored for key.
-func (s *SkipList[K, V]) Get(key K) (V, bool) {
+func (s *SkipListMap[K, V]) Get(key K) (V, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.sl.Get(key)
 }
 
 // Remove deletes key and returns its previous value.
-func (s *SkipList[K, V]) Remove(key K) (old V, removed bool) {
+func (s *SkipListMap[K, V]) Remove(key K) (old V, removed bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.sl.Remove(key)
 }
 
 // ContainsKey reports whether key is present.
-func (s *SkipList[K, V]) ContainsKey(key K) bool {
+func (s *SkipListMap[K, V]) ContainsKey(key K) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.sl.ContainsKey(key)
 }
 
 // Len returns the number of entries.
-func (s *SkipList[K, V]) Len() int {
+func (s *SkipListMap[K, V]) Len() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.sl.Len()
 }
 
 // Clear removes all entries.
-func (s *SkipList[K, V]) Clear() {
+func (s *SkipListMap[K, V]) Clear() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sl.Clear()
 }
 
 // First returns the entry with the smallest key.
-func (s *SkipList[K, V]) First() (K, V, bool) {
+func (s *SkipListMap[K, V]) First() (K, V, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.sl.First()
 }
 
 // Last returns the entry with the greatest key.
-func (s *SkipList[K, V]) Last() (K, V, bool) {
+func (s *SkipListMap[K, V]) Last() (K, V, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.sl.Last()
 }
 
 // Floor returns the entry with the greatest key <= key.
-func (s *SkipList[K, V]) Floor(key K) (K, V, bool) {
+func (s *SkipListMap[K, V]) Floor(key K) (K, V, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.sl.Floor(key)
 }
 
 // Ceiling returns the entry with the smallest key >= key.
-func (s *SkipList[K, V]) Ceiling(key K) (K, V, bool) {
+func (s *SkipListMap[K, V]) Ceiling(key K) (K, V, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.sl.Ceiling(key)
 }
 
 // Lower returns the entry with the greatest key < key.
-func (s *SkipList[K, V]) Lower(key K) (K, V, bool) {
+func (s *SkipListMap[K, V]) Lower(key K) (K, V, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.sl.Lower(key)
 }
 
 // Higher returns the entry with the smallest key > key.
-func (s *SkipList[K, V]) Higher(key K) (K, V, bool) {
+func (s *SkipListMap[K, V]) Higher(key K) (K, V, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.sl.Higher(key)
 }
 
 // Keys returns a snapshot of the keys in ascending order.
-func (s *SkipList[K, V]) Keys() []K {
+func (s *SkipListMap[K, V]) Keys() []K {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.sl.Keys()
 }
 
 // All iterates over a snapshot of the entries in ascending key order.
-func (s *SkipList[K, V]) All() iter.Seq2[K, V] {
+func (s *SkipListMap[K, V]) All() iter.Seq2[K, V] {
 	snapshot := s.snapshot()
 	return func(yield func(K, V) bool) {
 		for _, e := range snapshot {
@@ -342,7 +374,7 @@ func (s *SkipList[K, V]) All() iter.Seq2[K, V] {
 
 // Range iterates over a snapshot of the entries whose keys fall in
 // [from, to], honoring the inclusivity flags.
-func (s *SkipList[K, V]) Range(from, to K, fromInclusive, toInclusive bool) iter.Seq2[K, V] {
+func (s *SkipListMap[K, V]) Range(from, to K, fromInclusive, toInclusive bool) iter.Seq2[K, V] {
 	s.mu.RLock()
 	var snapshot []entry[K, V]
 	for k, v := range s.sl.Range(from, to, fromInclusive, toInclusive) {
@@ -363,7 +395,7 @@ type entry[K any, V any] struct {
 	val V
 }
 
-func (s *SkipList[K, V]) snapshot() []entry[K, V] {
+func (s *SkipListMap[K, V]) snapshot() []entry[K, V] {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]entry[K, V], 0, s.sl.Len())

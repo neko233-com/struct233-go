@@ -26,11 +26,11 @@ type node[K any, V any] struct {
 	forward []*node[K, V]
 }
 
-// SkipList is an ordered map: entries are kept sorted by the comparator.
+// SkipListMap is an ordered map: entries are kept sorted by the comparator.
 //
-// A SkipList is not safe for concurrent use; guard it externally
+// A SkipListMap is not safe for concurrent use; guard it externally
 // (for example with a sync.Mutex) when shared across goroutines.
-type SkipList[K any, V any] struct {
+type SkipListMap[K any, V any] struct {
 	cmp      Comparator[K]
 	maxLevel int
 	p        float64
@@ -41,18 +41,18 @@ type SkipList[K any, V any] struct {
 	update []*node[K, V]
 }
 
-// New creates a SkipList ordered by the natural ordering of K.
-func New[K cmp.Ordered, V any]() *SkipList[K, V] {
+// New creates a SkipListMap ordered by the natural ordering of K.
+func New[K cmp.Ordered, V any]() *SkipListMap[K, V] {
 	return NewFunc[K, V](cmp.Compare[K])
 }
 
-// NewFunc creates a SkipList ordered by a custom comparator.
+// NewFunc creates a SkipListMap ordered by a custom comparator.
 // It panics if compare is nil.
-func NewFunc[K any, V any](compare Comparator[K]) *SkipList[K, V] {
+func NewFunc[K any, V any](compare Comparator[K]) *SkipListMap[K, V] {
 	if compare == nil {
 		panic("skiplist: nil comparator")
 	}
-	return &SkipList[K, V]{
+	return &SkipListMap[K, V]{
 		cmp:      compare,
 		maxLevel: defaultMaxLevel,
 		p:        defaultP,
@@ -62,9 +62,9 @@ func NewFunc[K any, V any](compare Comparator[K]) *SkipList[K, V] {
 }
 
 // Len returns the number of entries.
-func (s *SkipList[K, V]) Len() int { return s.size }
+func (s *SkipListMap[K, V]) Len() int { return s.size }
 
-func (s *SkipList[K, V]) randomLevel() int {
+func (s *SkipListMap[K, V]) randomLevel() int {
 	level := 1
 	for level < s.maxLevel && rand.Float64() < s.p {
 		level++
@@ -75,7 +75,7 @@ func (s *SkipList[K, V]) randomLevel() int {
 // predecessors returns, for every level, the rightmost node whose key is
 // strictly smaller than key. The result aliases the internal scratch
 // buffer and is valid until the next write.
-func (s *SkipList[K, V]) predecessors(key K) []*node[K, V] {
+func (s *SkipListMap[K, V]) predecessors(key K) []*node[K, V] {
 	update := s.update
 	cur := s.head
 	for level := s.maxLevel - 1; level >= 0; level-- {
@@ -89,7 +89,7 @@ func (s *SkipList[K, V]) predecessors(key K) []*node[K, V] {
 
 // lowerBound returns the first node whose key is >= target (inclusive)
 // or > target (exclusive), or nil when no such node exists.
-func (s *SkipList[K, V]) lowerBound(target K, inclusive bool) *node[K, V] {
+func (s *SkipListMap[K, V]) lowerBound(target K, inclusive bool) *node[K, V] {
 	cur := s.head
 	for level := s.maxLevel - 1; level >= 0; level-- {
 		for next := cur.forward[level]; next != nil; next = cur.forward[level] {
@@ -106,7 +106,7 @@ func (s *SkipList[K, V]) lowerBound(target K, inclusive bool) *node[K, V] {
 
 // floorNode returns the last node whose key is <= target (inclusive)
 // or < target (exclusive), or nil when no such node exists.
-func (s *SkipList[K, V]) floorNode(target K, inclusive bool) *node[K, V] {
+func (s *SkipListMap[K, V]) floorNode(target K, inclusive bool) *node[K, V] {
 	cur := s.head
 	for level := s.maxLevel - 1; level >= 0; level-- {
 		for next := cur.forward[level]; next != nil; next = cur.forward[level] {
@@ -125,7 +125,7 @@ func (s *SkipList[K, V]) floorNode(target K, inclusive bool) *node[K, V] {
 }
 
 // Put inserts or updates key, returning the previous value if present.
-func (s *SkipList[K, V]) Put(key K, val V) (old V, existed bool) {
+func (s *SkipListMap[K, V]) Put(key K, val V) (old V, existed bool) {
 	update := s.predecessors(key)
 	if found := update[0].forward[0]; found != nil && s.cmp(found.key, key) == 0 {
 		old, existed = found.val, true
@@ -143,7 +143,7 @@ func (s *SkipList[K, V]) Put(key K, val V) (old V, existed bool) {
 }
 
 // Get returns the value stored for key.
-func (s *SkipList[K, V]) Get(key K) (val V, ok bool) {
+func (s *SkipListMap[K, V]) Get(key K) (val V, ok bool) {
 	found := s.lowerBound(key, true)
 	if found != nil && s.cmp(found.key, key) == 0 {
 		return found.val, true
@@ -152,13 +152,13 @@ func (s *SkipList[K, V]) Get(key K) (val V, ok bool) {
 }
 
 // ContainsKey reports whether key is present.
-func (s *SkipList[K, V]) ContainsKey(key K) bool {
+func (s *SkipListMap[K, V]) ContainsKey(key K) bool {
 	_, ok := s.Get(key)
 	return ok
 }
 
 // Remove deletes key and returns its previous value.
-func (s *SkipList[K, V]) Remove(key K) (old V, removed bool) {
+func (s *SkipListMap[K, V]) Remove(key K) (old V, removed bool) {
 	update := s.predecessors(key)
 	found := update[0].forward[0]
 	if found == nil || s.cmp(found.key, key) != 0 {
@@ -172,13 +172,14 @@ func (s *SkipList[K, V]) Remove(key K) (old V, removed bool) {
 }
 
 // Clear removes all entries.
-func (s *SkipList[K, V]) Clear() {
+func (s *SkipListMap[K, V]) Clear() {
 	clear(s.head.forward)
+	clear(s.update)
 	s.size = 0
 }
 
 // First returns the entry with the smallest key.
-func (s *SkipList[K, V]) First() (key K, val V, ok bool) {
+func (s *SkipListMap[K, V]) First() (key K, val V, ok bool) {
 	n := s.head.forward[0]
 	if n == nil {
 		return key, val, false
@@ -187,7 +188,7 @@ func (s *SkipList[K, V]) First() (key K, val V, ok bool) {
 }
 
 // Last returns the entry with the greatest key.
-func (s *SkipList[K, V]) Last() (key K, val V, ok bool) {
+func (s *SkipListMap[K, V]) Last() (key K, val V, ok bool) {
 	cur := s.head
 	for level := s.maxLevel - 1; level >= 0; level-- {
 		for cur.forward[level] != nil {
@@ -201,7 +202,7 @@ func (s *SkipList[K, V]) Last() (key K, val V, ok bool) {
 }
 
 // Floor returns the entry with the greatest key <= key.
-func (s *SkipList[K, V]) Floor(key K) (k K, val V, ok bool) {
+func (s *SkipListMap[K, V]) Floor(key K) (k K, val V, ok bool) {
 	n := s.floorNode(key, true)
 	if n == nil {
 		return k, val, false
@@ -210,7 +211,7 @@ func (s *SkipList[K, V]) Floor(key K) (k K, val V, ok bool) {
 }
 
 // Ceiling returns the entry with the smallest key >= key.
-func (s *SkipList[K, V]) Ceiling(key K) (k K, val V, ok bool) {
+func (s *SkipListMap[K, V]) Ceiling(key K) (k K, val V, ok bool) {
 	n := s.lowerBound(key, true)
 	if n == nil {
 		return k, val, false
@@ -219,7 +220,7 @@ func (s *SkipList[K, V]) Ceiling(key K) (k K, val V, ok bool) {
 }
 
 // Lower returns the entry with the greatest key < key.
-func (s *SkipList[K, V]) Lower(key K) (k K, val V, ok bool) {
+func (s *SkipListMap[K, V]) Lower(key K) (k K, val V, ok bool) {
 	n := s.floorNode(key, false)
 	if n == nil {
 		return k, val, false
@@ -228,7 +229,7 @@ func (s *SkipList[K, V]) Lower(key K) (k K, val V, ok bool) {
 }
 
 // Higher returns the entry with the smallest key > key.
-func (s *SkipList[K, V]) Higher(key K) (k K, val V, ok bool) {
+func (s *SkipListMap[K, V]) Higher(key K) (k K, val V, ok bool) {
 	n := s.lowerBound(key, false)
 	if n == nil {
 		return k, val, false
@@ -238,7 +239,7 @@ func (s *SkipList[K, V]) Higher(key K) (k K, val V, ok bool) {
 
 // All iterates over all entries in ascending key order.
 // It supports range-over-func: `for k, v := range sl.All()`.
-func (s *SkipList[K, V]) All() iter.Seq2[K, V] {
+func (s *SkipListMap[K, V]) All() iter.Seq2[K, V] {
 	return func(yield func(K, V) bool) {
 		for n := s.head.forward[0]; n != nil; n = n.forward[0] {
 			if !yield(n.key, n.val) {
@@ -250,7 +251,7 @@ func (s *SkipList[K, V]) All() iter.Seq2[K, V] {
 
 // Range iterates over the entries whose keys fall in [from, to],
 // honoring the inclusivity flags, in ascending order.
-func (s *SkipList[K, V]) Range(from, to K, fromInclusive, toInclusive bool) iter.Seq2[K, V] {
+func (s *SkipListMap[K, V]) Range(from, to K, fromInclusive, toInclusive bool) iter.Seq2[K, V] {
 	return func(yield func(K, V) bool) {
 		for n := s.lowerBound(from, fromInclusive); n != nil; n = n.forward[0] {
 			c := s.cmp(n.key, to)
@@ -265,7 +266,7 @@ func (s *SkipList[K, V]) Range(from, to K, fromInclusive, toInclusive bool) iter
 }
 
 // Keys returns all keys in ascending order.
-func (s *SkipList[K, V]) Keys() []K {
+func (s *SkipListMap[K, V]) Keys() []K {
 	keys := make([]K, 0, s.size)
 	for n := s.head.forward[0]; n != nil; n = n.forward[0] {
 		keys = append(keys, n.key)

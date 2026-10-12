@@ -99,7 +99,7 @@ func TestPriorityQueueOpsMatrix(t *testing.T) {
 }
 
 // mustMin returns the smallest of the queue's current contents (via ToSlice).
-func mustMin[T cmp.Ordered](t *testing.T, q *pqueue.PriorityQueue[T]) T {
+func mustMin[T cmp.Ordered](t *testing.T, q *pqueue.HeapPriorityQueue[T]) T {
 	t.Helper()
 	s := q.ToSlice()
 	require.NotEmpty(t, s)
@@ -127,16 +127,16 @@ func atoi(s string) int {
 func TestPriorityQueueConstructorsMatrix(t *testing.T) {
 	tests := []struct {
 		name  string
-		build func() *pqueue.PriorityQueue[int]
+		build func() *pqueue.HeapPriorityQueue[int]
 		want  []int // drain order
 	}{
 		{
 			name:  "New natural min",
-			build: func() *pqueue.PriorityQueue[int] { return pqueue.New[int]() },
+			build: func() *pqueue.HeapPriorityQueue[int] { return pqueue.New[int]() },
 		},
 		{
 			name: "NewFunc ascending",
-			build: func() *pqueue.PriorityQueue[int] {
+			build: func() *pqueue.HeapPriorityQueue[int] {
 				q := pqueue.NewFunc(func(a, b int) int { return a - b })
 				q.Push(3)
 				q.Push(9)
@@ -147,7 +147,7 @@ func TestPriorityQueueConstructorsMatrix(t *testing.T) {
 		},
 		{
 			name: "NewFunc descending max-queue",
-			build: func() *pqueue.PriorityQueue[int] {
+			build: func() *pqueue.HeapPriorityQueue[int] {
 				q := pqueue.NewFunc(func(a, b int) int { return b - a })
 				q.Push(3)
 				q.Push(9)
@@ -158,42 +158,42 @@ func TestPriorityQueueConstructorsMatrix(t *testing.T) {
 		},
 		{
 			name: "NewFromSlice empty",
-			build: func() *pqueue.PriorityQueue[int] {
+			build: func() *pqueue.HeapPriorityQueue[int] {
 				return pqueue.NewFromSlice([]int{}, intCmp)
 			},
 			want: nil,
 		},
 		{
 			name: "NewFromSlice nil",
-			build: func() *pqueue.PriorityQueue[int] {
+			build: func() *pqueue.HeapPriorityQueue[int] {
 				return pqueue.NewFromSlice(nil, intCmp)
 			},
 			want: nil,
 		},
 		{
 			name: "NewFromSlice sorted",
-			build: func() *pqueue.PriorityQueue[int] {
+			build: func() *pqueue.HeapPriorityQueue[int] {
 				return pqueue.NewFromSlice([]int{1, 2, 3}, intCmp)
 			},
 			want: []int{1, 2, 3},
 		},
 		{
 			name: "NewFromSlice reversed",
-			build: func() *pqueue.PriorityQueue[int] {
+			build: func() *pqueue.HeapPriorityQueue[int] {
 				return pqueue.NewFromSlice([]int{9, 5, 3}, intCmp)
 			},
 			want: []int{3, 5, 9},
 		},
 		{
 			name: "NewFromSlice duplicates",
-			build: func() *pqueue.PriorityQueue[int] {
+			build: func() *pqueue.HeapPriorityQueue[int] {
 				return pqueue.NewFromSlice([]int{2, 1, 2, 1}, intCmp)
 			},
 			want: []int{1, 1, 2, 2},
 		},
 		{
 			name: "NewFromSlice negatives",
-			build: func() *pqueue.PriorityQueue[int] {
+			build: func() *pqueue.HeapPriorityQueue[int] {
 				return pqueue.NewFromSlice([]int{-1, -7, 0, 4}, intCmp)
 			},
 			want: []int{-7, -1, 0, 4},

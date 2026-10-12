@@ -166,6 +166,7 @@ func TestNewPanics(t *testing.T) {
 		{"rate above one", 100, 1.5, "bloomfilter: falsePositiveRate must be within (0, 1)"},
 		{"rate of +inf", 100, math.Inf(1), "bloomfilter: falsePositiveRate must be within (0, 1)"},
 		{"rate of -inf", 100, math.Inf(-1), "bloomfilter: falsePositiveRate must be within (0, 1)"},
+		{"NaN rate", 100, math.NaN(), "bloomfilter: falsePositiveRate must be within (0, 1)"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -174,23 +175,7 @@ func TestNewPanics(t *testing.T) {
 	}
 }
 
-// TestNaNRateBypassesValidation characterises a gap in the argument check: a
-// NaN false-positive rate is not rejected by New because both comparisons in
-// the check are false for NaN. The returned filter is unusable (its bit count
-// degenerates to an implementation-dependent huge value), so this test only
-// pins the missing validation and deliberately never touches the filter; the
-// defect is reported separately and the source is not modified here.
-func TestNaNRateBypassesValidation(t *testing.T) {
-	require.NotPanics(t, func() { bloomfilter.New(100, math.NaN()) },
-		"a NaN false-positive rate must be rejected but currently is not")
-}
-
-// TestExtremeSizingIsAcceptedButUnsafe pins that New accepts extreme design
-// sizes without panicking: m is computed in float64 and converted to uint64
-// without an overflow check, so huge expectedItems yield an unusable filter
-// (probing would request astronomically large bit indexes). Only construction
-// is exercised here; the missing bound is reported separately.
-func TestExtremeSizingIsAcceptedButUnsafe(t *testing.T) {
+func TestExtremeSizingRejectsIndexOverflow(t *testing.T) {
 	tests := []struct {
 		name string
 		n    int
@@ -198,19 +183,21 @@ func TestExtremeSizingIsAcceptedButUnsafe(t *testing.T) {
 	}{
 		{"max int items", math.MaxInt, 1e-9},
 		{"max int items loose rate", math.MaxInt, 0.5},
-		{"billion items", 1 << 30, 0.5},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.NotPanics(t, func() {
-				b := bloomfilter.New(tt.n, tt.rate)
-				// construction must leave the filter empty and consistent
-				require.Zero(t, b.Count())
-				require.Zero(t, b.PopCount())
-				require.Zero(t, b.FalsePositiveRate())
-			})
+			require.PanicsWithValue(t, "bloomfilter: required bit count is too large",
+				func() { bloomfilter.New(tt.n, tt.rate) })
 		})
 	}
+}
+
+func TestLargeRepresentableFilterRemainsLazy(t *testing.T) {
+	b := bloomfilter.New(1<<30, 0.5)
+	require.Greater(t, b.BitLen(), uint64(1<<30))
+	require.Zero(t, b.Count())
+	require.Zero(t, b.PopCount())
+	require.False(t, b.TestUint64(42), "a read must not allocate the bit vector")
 }
 
 // TestAddThenTest covers the normal round trip of every element kind.

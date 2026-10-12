@@ -46,37 +46,37 @@ func (s *scriptedSource) Float64() float64 {
 	return v
 }
 
-func TestNewSet(t *testing.T) {
-	s := struct233.NewSet(1, 2, 3)
+func TestNewHashSet(t *testing.T) {
+	s := struct233.NewHashSet(1, 2, 3)
 	require.Equal(t, 3, s.Len())
 	require.True(t, s.Contains(2))
 	require.False(t, s.Add(3))
-	require.True(t, s.Union(struct233.NewSet(4)).Equal(struct233.NewSet(1, 2, 3, 4)))
+	require.True(t, s.Union(struct233.NewHashSet(4)).Equal(struct233.NewHashSet(1, 2, 3, 4)))
 
-	capped := struct233.NewSetWithCapacity[string](32, "a", "b")
+	capped := struct233.NewHashSetWithCapacity[string](32, "a", "b")
 	require.Equal(t, 2, capped.Len())
 	require.True(t, capped.ContainsAll("a", "b"))
 }
 
-func TestNewSortedSet(t *testing.T) {
-	ts := struct233.NewSortedSet(3, 1, 2)
+func TestNewSkipListSet(t *testing.T) {
+	ts := struct233.NewSkipListSet(3, 1, 2)
 	require.Equal(t, []int{1, 2, 3}, ts.ToSlice())
 
 	k, ok := ts.Ceiling(2)
 	require.True(t, ok)
 	require.Equal(t, 2, k)
 
-	desc := struct233.NewSortedSetFunc(func(a, b int) int { return b - a }, 1, 3, 2)
+	desc := struct233.NewSkipListSetFunc(func(a, b int) int { return b - a }, 1, 3, 2)
 	require.Equal(t, []int{3, 2, 1}, desc.ToSlice())
 }
 
-func TestNewLinkedSet(t *testing.T) {
-	s := struct233.NewLinkedSet("c", "a", "b")
+func TestNewLinkedHashSet(t *testing.T) {
+	s := struct233.NewLinkedHashSet("c", "a", "b")
 	require.Equal(t, []string{"c", "a", "b"}, s.ToSlice(), "insertion order must be preserved")
 }
 
-func TestNewSkipList(t *testing.T) {
-	sl := struct233.NewSkipList[int, string]()
+func TestNewSkipListMap(t *testing.T) {
+	sl := struct233.NewSkipListMap[int, string]()
 	sl.Put(10, "a")
 	sl.Put(20, "b")
 
@@ -88,7 +88,7 @@ func TestNewSkipList(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, 10, k)
 
-	rev := struct233.NewSkipListFunc[string, int](func(a, b string) int { return strings.Compare(b, a) })
+	rev := struct233.NewSkipListMapFunc[string, int](func(a, b string) int { return strings.Compare(b, a) })
 	rev.Put("a", 1)
 	rev.Put("c", 3)
 	revKey, _, revOK := rev.First()
@@ -96,21 +96,21 @@ func TestNewSkipList(t *testing.T) {
 	require.Equal(t, "c", revKey, "custom comparator must be honoured")
 }
 
-func TestNewTreeMap(t *testing.T) {
-	tm := struct233.NewTreeMap[int, string]()
+func TestSkipListMapOrdering(t *testing.T) {
+	tm := struct233.NewSkipListMap[int, string]()
 	tm.Put(5, "e")
 	tm.Put(1, "a")
 
 	require.Equal(t, []int{1, 5}, tm.Keys())
 
-	tmFunc := struct233.NewTreeMapFunc[int, string](func(a, b int) int { return b - a })
+	tmFunc := struct233.NewSkipListMapFunc[int, string](func(a, b int) int { return b - a })
 	tmFunc.Put(1, "a")
 	tmFunc.Put(5, "e")
 	require.Equal(t, []int{5, 1}, tmFunc.Keys(), "reversed comparator must be honoured")
 }
 
-func TestNewLinkedMap(t *testing.T) {
-	m := struct233.NewLinkedMap[string, int]()
+func TestNewLinkedHashMap(t *testing.T) {
+	m := struct233.NewLinkedHashMap[string, int]()
 	m.Put("b", 1)
 	m.Put("a", 2)
 	m.Put("b", 3) // update must not reorder
@@ -119,8 +119,8 @@ func TestNewLinkedMap(t *testing.T) {
 	require.Equal(t, []int{3, 2}, m.Values())
 }
 
-func TestNewPriorityQueue(t *testing.T) {
-	q := struct233.NewPriorityQueue[int]()
+func TestNewHeapPriorityQueue(t *testing.T) {
+	q := struct233.NewHeapPriorityQueue[int]()
 	q.Push(3)
 	q.Push(1)
 	q.Push(2)
@@ -129,21 +129,21 @@ func TestNewPriorityQueue(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, 1, v)
 
-	maxQ := struct233.NewPriorityQueueFunc(func(a, b int) int { return b - a })
+	maxQ := struct233.NewHeapPriorityQueueFunc(func(a, b int) int { return b - a })
 	maxQ.Push(1)
 	maxQ.Push(9)
 	v, ok = maxQ.Pop()
 	require.True(t, ok)
 	require.Equal(t, 9, v, "custom comparator must be honoured")
 
-	fromSlice := struct233.NewPriorityQueueFromSlice([]int{5, 1, 4}, func(a, b int) int { return a - b })
+	fromSlice := struct233.NewHeapPriorityQueueFromSlice([]int{5, 1, 4}, func(a, b int) int { return a - b })
 	v, ok = fromSlice.Pop()
 	require.True(t, ok)
 	require.Equal(t, 1, v)
 }
 
-func TestNewDeque(t *testing.T) {
-	d := struct233.NewDeque[int](16)
+func TestNewArrayDeque(t *testing.T) {
+	d := struct233.NewArrayDeque[int](16)
 	d.PushBack(1)
 	d.PushFront(0)
 	d.PushBack(2)
@@ -156,7 +156,7 @@ func TestNewDeque(t *testing.T) {
 
 	require.Equal(t, []int{0, 1}, d.ToSlice())
 
-	noCap := struct233.NewDeque[string]()
+	noCap := struct233.NewArrayDeque[string]()
 	require.GreaterOrEqual(t, noCap.Cap(), 8)
 }
 
@@ -204,26 +204,26 @@ func TestNewLRU(t *testing.T) {
 }
 
 func TestNewConcurrentContainers(t *testing.T) {
-	cs := struct233.NewConcurrentSetWithCapacity[int](8)
+	cs := struct233.NewConcurrentHashSetWithCapacity[int](8)
 	require.True(t, cs.Add(1))
 	require.True(t, cs.Contains(1))
 
-	cm := struct233.NewConcurrentMapWithCapacity[string, int](8)
+	cm := struct233.NewConcurrentHashMapWithCapacity[string, int](8)
 	cm.Put("a", 1)
 	v, loaded := cm.GetOrPut("a", func() int { return 99 })
 	require.True(t, loaded)
 	require.Equal(t, 1, v, "GetOrPut must keep the existing value")
 
 	// the no-capacity constructors must work too
-	require.True(t, struct233.NewConcurrentSet[int]().Add(1))
-	require.Zero(t, struct233.NewConcurrentMap[int, int]().Len())
+	require.True(t, struct233.NewConcurrentHashSet[int]().Add(1))
+	require.Zero(t, struct233.NewConcurrentHashMap[int, int]().Len())
 
-	csl := struct233.NewConcurrentSkipList[int, string]()
+	csl := struct233.NewConcurrentSkipListMap[int, string]()
 	csl.Put(2, "b")
 	csl.Put(1, "a")
 	require.Equal(t, []int{1, 2}, csl.Keys())
 
-	cslFunc := struct233.NewConcurrentSkipListFunc[string, int](func(a, b string) int { return strings.Compare(b, a) })
+	cslFunc := struct233.NewConcurrentSkipListMapFunc[string, int](func(a, b string) int { return strings.Compare(b, a) })
 	cslFunc.Put("a", 1)
 	cslFunc.Put("c", 3)
 	k, _, ok := cslFunc.First()
@@ -241,15 +241,15 @@ func TestNewConcurrentContainers(t *testing.T) {
 // TestAliasesAreTheImplementationTypes proves the facade returns the concrete
 // container types, so no wrapper indirection is introduced.
 func TestAliasesAreTheImplementationTypes(t *testing.T) {
-	var s *struct233.Set[int] = struct233.NewSet[int]()
+	var s *struct233.HashSet[int] = struct233.NewHashSet[int]()
 	s.Add(1)
 	require.True(t, s.Contains(1))
 
-	var d *struct233.Deque[int] = struct233.NewDeque[int]()
+	var d *struct233.ArrayDeque[int] = struct233.NewArrayDeque[int]()
 	d.PushBack(1)
 	require.Equal(t, 1, d.Len())
 
-	var tm *struct233.TreeMap[int, int] = struct233.NewTreeMap[int, int]()
+	var tm *struct233.SkipListMap[int, int] = struct233.NewSkipListMap[int, int]()
 	tm.Put(1, 1)
 	require.Equal(t, 1, tm.Len())
 }
@@ -272,7 +272,7 @@ func TestUtilityAliasesAreTheImplementationTypes(t *testing.T) {
 	wp.Close()
 	var _ *struct233.WorkerPool = wp
 
-	var rl *struct233.RateLimiter = struct233.NewRateLimiter(1, 1)
+	var rl *struct233.TokenBucketLimiter = struct233.NewTokenBucketLimiter(1, 1)
 	require.True(t, rl.Allow())
 
 	var u struct233.UUID = struct233.NilUUID
@@ -385,9 +385,9 @@ func TestNewWorkerPool(t *testing.T) {
 		"the facade returns the subpackage sentinel, so errors.Is works")
 }
 
-func TestNewRateLimiter(t *testing.T) {
+func TestNewTokenBucketLimiter(t *testing.T) {
 	now := time.Unix(0, 0)
-	l := struct233.NewRateLimiter(2, 2, struct233.WithRateLimitClock(func() time.Time { return now }))
+	l := struct233.NewTokenBucketLimiter(2, 2, struct233.WithRateLimitClock(func() time.Time { return now }))
 	require.Equal(t, 2.0, l.Rate())
 	require.Equal(t, 2, l.Burst())
 
@@ -402,10 +402,10 @@ func TestNewRateLimiter(t *testing.T) {
 	require.True(t, l.AllowN(2))
 	require.InDelta(t, 0.0, l.Tokens(), 1e-9)
 
-	full := struct233.NewRateLimiter(1, 1)
+	full := struct233.NewTokenBucketLimiter(1, 1)
 	require.NoError(t, full.Wait(context.Background()), "a full bucket must not block")
-	require.Panics(t, func() { struct233.NewRateLimiter(0, 1) })
-	require.Panics(t, func() { struct233.NewRateLimiter(1, 0) })
+	require.Panics(t, func() { struct233.NewTokenBucketLimiter(0, 1) })
+	require.Panics(t, func() { struct233.NewTokenBucketLimiter(1, 0) })
 }
 
 func TestNewDelayQueue(t *testing.T) {
@@ -697,13 +697,13 @@ func TestNewTableAndRangeMap(t *testing.T) {
 func BenchmarkFacadeNewSetAndAdd(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; b.Loop(); i++ {
-		s := struct233.NewSetWithCapacity[int](4)
+		s := struct233.NewHashSetWithCapacity[int](4)
 		s.Add(i & 3)
 	}
 }
 
 func BenchmarkFacadeGetSkipList(b *testing.B) {
-	sl := struct233.NewSkipList[int, int]()
+	sl := struct233.NewSkipListMap[int, int]()
 	rng := rand.New(rand.NewPCG(1, 2))
 	for range 1024 {
 		k := rng.IntN(1024)
